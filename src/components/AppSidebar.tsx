@@ -9,7 +9,7 @@ import {
   PiggyBank,
   CalendarDays,
   TrendingUp,
-  LineChart,
+  RefreshCw,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
@@ -20,14 +20,14 @@ const navItems = [
   { href: '/monthly/savings', label: 'Ahorros', icon: PiggyBank },
   { href: '/annual', label: 'Anual', icon: CalendarDays },
   { href: '/networth', label: 'Patrimonio', icon: TrendingUp },
-  { href: '/evolution', label: 'Evolución', icon: LineChart },
+  { href: '/sync', label: 'Sincronizar', icon: RefreshCw },
 ]
 
 export function AppSidebar() {
   const pathname = usePathname()
 
   return (
-    <aside className="hidden md:flex flex-col w-64 border-r bg-sidebar min-h-screen">
+    <aside className="hidden md:flex flex-col w-64 border-r bg-sidebar min-h-screen flex-shrink-0">
       <div className="flex items-center h-16 px-6 border-b">
         <Link href="/dashboard" className="flex items-center gap-2">
           <div className="w-8 h-8 rounded-lg bg-foreground flex items-center justify-center">
@@ -59,11 +59,6 @@ export function AppSidebar() {
           })}
         </ul>
       </nav>
-      <div className="p-4 border-t">
-        <div className="text-xs text-muted-foreground">
-          Demo Mode
-        </div>
-      </div>
     </aside>
   )
 }

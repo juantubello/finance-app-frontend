@@ -8,6 +8,7 @@ import {
   Wallet,
   PiggyBank,
   MoreHorizontal,
+  RefreshCw,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import {
@@ -16,7 +17,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import { CalendarDays, TrendingUp, LineChart } from 'lucide-react'
+import { CalendarDays, TrendingUp } from 'lucide-react'
 
 const mainNavItems = [
   { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
@@ -28,7 +29,7 @@ const mainNavItems = [
 const moreNavItems = [
   { href: '/annual', label: 'Anual', icon: CalendarDays },
   { href: '/networth', label: 'Patrimonio', icon: TrendingUp },
-  { href: '/evolution', label: 'Evolución', icon: LineChart },
+  { href: '/sync', label: 'Sincronizar', icon: RefreshCw },
 ]
 
 export function MobileNav() {
@@ -38,8 +39,8 @@ export function MobileNav() {
   )
 
   return (
-    <nav className="md:hidden fixed bottom-0 left-0 right-0 bg-background border-t z-50">
-      <ul className="flex items-center justify-around h-16">
+    <nav className="md:hidden fixed bottom-0 left-0 right-0 bg-background border-t z-50 safe-area-inset-bottom">
+      <ul className="flex items-center justify-around h-16 pb-safe">
         {mainNavItems.map((item) => {
           const isActive = pathname === item.href || pathname.startsWith(item.href + '/')
           return (

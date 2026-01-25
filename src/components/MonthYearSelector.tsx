@@ -26,9 +26,9 @@ export function MonthYearSelector() {
   const { year, month, setMonth, setYear } = useMonthYear()
 
   return (
-    <div className="flex items-center gap-2">
+    <div className="flex items-center gap-2 w-full sm:w-auto">
       <Select value={String(month)} onValueChange={(v) => setMonth(Number(v))}>
-        <SelectTrigger className="w-[130px]" size="sm">
+        <SelectTrigger className="w-full sm:w-[130px]" size="sm">
           <SelectValue placeholder="Mes" />
         </SelectTrigger>
         <SelectContent>
@@ -41,7 +41,7 @@ export function MonthYearSelector() {
       </Select>
 
       <Select value={String(year)} onValueChange={(v) => setYear(Number(v))}>
-        <SelectTrigger className="w-[90px]" size="sm">
+        <SelectTrigger className="w-full sm:w-[90px]" size="sm">
           <SelectValue placeholder="Año" />
         </SelectTrigger>
         <SelectContent>

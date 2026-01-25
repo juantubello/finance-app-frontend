@@ -47,7 +47,7 @@ npm install
 # Ejecutar en modo desarrollo
 npm run dev
 
-# Abrir http://localhost:3000/dashboard
+# Abrir http://localhost:3005/dashboard
 ```
 
 ## Variables de Entorno
@@ -65,7 +65,7 @@ docker build -t finanzas-frontend .
 # Ejecutar con docker-compose
 docker-compose up -d
 
-# La app estará disponible en http://localhost:3000
+# La app estará disponible en http://localhost:3005
 ```
 
 ## Conexión con Backend

@@ -24,15 +24,16 @@ export function CategoryBreakdown({ breakdown, title = 'Por Categoría' }: Categ
         <CardTitle>{title}</CardTitle>
       </CardHeader>
       <CardContent className="flex-1 flex flex-col">
-        <div className="h-[250px] mb-6 flex-shrink-0">
+        <div className="h-[200px] mb-4 flex-shrink-0 w-full overflow-x-hidden">
           <ResponsiveContainer width="100%" height="100%">
-            <BarChart data={chartData} layout="vertical" margin={{ left: 0, right: 0 }}>
+            <BarChart data={chartData} layout="vertical" margin={{ left: 0, right: 10 }}>
               <XAxis type="number" hide />
               <YAxis 
                 type="category" 
                 dataKey="name" 
-                width={90}
-                tick={{ fontSize: 12 }}
+                width={80}
+                tick={{ fontSize: 11 }}
+                className="text-xs"
               />
               <Tooltip 
                 formatter={(value: number) => formatCurrency(value)}
@@ -46,7 +47,7 @@ export function CategoryBreakdown({ breakdown, title = 'Por Categoría' }: Categ
           </ResponsiveContainer>
         </div>
         
-        <div className="space-y-3 flex-1 overflow-y-auto">
+        <div className="space-y-2 flex-1 overflow-y-auto max-h-[200px]">
           {breakdown.map((item, index) => (
             <div key={item.category} className="flex items-center justify-between">
               <div className="flex items-center gap-2">

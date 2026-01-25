@@ -1,256 +1,292 @@
 'use client'
 
+import { useState, useEffect } from 'react'
 import { Header } from '@/src/components/Header'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { ExchangeRateCard } from '@/src/components/ExchangeRateCard'
-import { useExchangeRates, USER_BTC_HOLDINGS } from '@/src/hooks/useExchangeRates'
+import { PatrimonioForm } from '@/src/components/PatrimonioForm'
+import { LoadingPage } from '@/src/components/LoadingState'
+import { useExchangeRates } from '@/src/hooks/useExchangeRates'
+import { useCedearSpy } from '@/src/hooks/useCedearSpy'
 import { formatCurrency, formatDate } from '@/src/lib/format'
-import { USE_DEMO_DATA } from '@/src/lib/api'
-import { getDemoNetWorth } from '@/src/lib/dummy'
-import { TrendingUp, TrendingDown, Scale } from 'lucide-react'
-import {
-  PieChart,
-  Pie,
-  Cell,
-  ResponsiveContainer,
-  Legend,
-  Tooltip,
-} from 'recharts'
-
-const ASSET_COLORS = ['#16a34a', '#22c55e', '#4ade80', '#86efac', '#bbf7d0']
-const DEBT_COLORS = ['#dc2626', '#ef4444', '#f87171']
+import { fetchPatrimonio, fetchCurrentLiquidity } from '@/src/lib/api'
+import type { PatrimonioResponse } from '@/src/lib/api'
+import { Wallet, Bitcoin, TrendingUp, DollarSign } from 'lucide-react'
 
 export default function NetworthPage() {
   const { btcUsd, dolarBlue } = useExchangeRates()
+  const { cedearData } = useCedearSpy()
+  const [patrimonio, setPatrimonio] = useState<PatrimonioResponse | null>(null)
+  const [liquidity, setLiquidity] = useState<number | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
 
-  // TODO: Replace with actual API call when backend is ready
-  const baseData = USE_DEMO_DATA 
-    ? getDemoNetWorth()
-    : null
+  const loadData = async () => {
+    setLoading(true)
+    setError(null)
+    try {
+      const [patrimonioData, liquidityData] = await Promise.all([
+        fetchPatrimonio(),
+        fetchCurrentLiquidity(),
+      ])
+      setPatrimonio(patrimonioData)
+      setLiquidity(liquidityData.current)
+    } catch (err) {
+      console.error('Error loading patrimonio:', err)
+      setError(err instanceof Error ? err.message : 'Error al cargar el patrimonio')
+    } finally {
+      setLoading(false)
+    }
+  }
 
-  if (!baseData) {
+  useEffect(() => {
+    loadData()
+  }, [])
+
+  if (loading) {
+    return (
+      <div>
+        <Header title="Patrimonio" showMonthYear={false} />
+        <LoadingPage />
+      </div>
+    )
+  }
+
+  if (error || !patrimonio) {
     return (
       <div>
         <Header title="Patrimonio" showMonthYear={false} />
         <div className="p-4 md:p-6">
-          <p className="text-muted-foreground">Cargando...</p>
+          <Card>
+            <CardContent className="pt-6">
+              <p className="text-destructive">{error || 'No se pudieron cargar los datos del patrimonio'}</p>
+            </CardContent>
+          </Card>
         </div>
       </div>
     )
   }
 
-  // Calculate BTC value in ARS using live prices
-  const btcValueUsd = btcUsd ? btcUsd * USER_BTC_HOLDINGS : 0
-  const btcValueArs = btcValueUsd && dolarBlue ? btcValueUsd * dolarBlue : 0
+  // Calculate values with null checks
+  const bitcoinQuantity = patrimonio.bitcoin?.quantity || 0
+  const btcValueUsd = btcUsd ? btcUsd * bitcoinQuantity : 0
+  const btcValueArs = btcUsd && dolarBlue ? btcValueUsd * dolarBlue : 0
+  
+  // CEDEAR SPY500 - usar precio de la API si está disponible
+  const cedearQuantity = patrimonio.cedear?.quantity || 0
+  const cedearPriceArs = cedearData?.lastPrice || null
+  const cedearValueArs = cedearQuantity > 0 && cedearPriceArs ? cedearQuantity * cedearPriceArs : 0
+  const cedearValueUsd = cedearValueArs > 0 && dolarBlue ? cedearValueArs / dolarBlue : 0
 
-  // Update assets to show BTC with live price instead of generic crypto
-  const updatedAssets = baseData.assets.map(asset => {
-    if (asset.name === 'Crypto (BTC/ETH)') {
-      return {
-        ...asset,
-        name: `Bitcoin (${USER_BTC_HOLDINGS} BTC)`,
-        value: btcValueArs || asset.value, // Use live value or fallback
-      }
-    }
-    return asset
-  })
+  // USD Físico
+  const usdFisicoTotal = patrimonio.usd_fisico?.total || 0
+  const usdFisicoValueArs = dolarBlue ? usdFisicoTotal * dolarBlue : 0
 
-  const data = {
-    ...baseData,
-    assets: updatedAssets,
-  }
+  // Patrimonio USD total
+  const patrimonioUsdArray = patrimonio.patrimonio_usd || []
+  const patrimonioUsdTotal = patrimonioUsdArray.reduce((sum, item) => sum + (item.value_usd || 0), 0)
+  const patrimonioUsdTotalArs = dolarBlue ? patrimonioUsdTotal * dolarBlue : 0
 
-  // Recalculate totals with updated BTC value
-  const totalAssets = updatedAssets.reduce((sum, a) => sum + a.value, 0)
-  const totalDebts = data.debts.reduce((sum, d) => sum + d.value, 0)
-  const netWorth = totalAssets - totalDebts
+  // Liquidez disponible
+  const disponibleArs = liquidity || 0
+  const disponibleUsd = dolarBlue ? disponibleArs / dolarBlue : 0
 
-  // Use updatedAssets for chart to ensure BTC value is correct
-  const assetsChartData = updatedAssets.map((a) => ({
-    name: a.name,
-    value: a.value,
-  }))
+  // Calcular totales
+  // Total en ARS: sumar todos los activos convertidos a ARS
+  const totalArs = disponibleArs + 
+                   btcValueArs + 
+                   cedearValueArs + 
+                   usdFisicoValueArs + 
+                   patrimonioUsdTotalArs
 
-  const debtsChartData = data.debts.map((d) => ({
-    name: d.name,
-    value: d.value,
-  }))
+  // Total en USD: usar dólar blue para convertir
+  const totalUsd = dolarBlue ? totalArs / dolarBlue : 0
 
   return (
     <div>
       <Header title="Patrimonio" showMonthYear={false} />
-      <div className="p-4 md:p-6 space-y-6">
-        {/* Last updated */}
-        <div className="text-sm text-muted-foreground">
-          Actualizado al {formatDate(data.date)}
+      <div className="p-4 md:p-6 space-y-6 max-w-full overflow-x-hidden">
+        {/* Header with Add Button */}
+        <div className="flex items-center justify-between">
+          <div className="text-sm text-muted-foreground">
+            Resumen de patrimonio
+          </div>
+          <PatrimonioForm onSuccess={loadData} />
         </div>
 
-        {/* Cotizaciones - compact inline */}
+        {/* Cotizaciones */}
         <ExchangeRateCard showBtc={true} />
 
-        {/* Main Summary Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Total Activos</CardTitle>
-              <TrendingUp className="h-4 w-4 text-green-600" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold text-green-600">
-                {formatCurrency(totalAssets)}
+        {/* Total Patrimonio */}
+        <Card className="bg-gradient-to-br from-primary/10 to-primary/5 border border-primary/20">
+          <CardContent className="pt-6">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <TrendingUp className="h-4 w-4 text-primary" />
+                <span className="text-sm font-medium text-muted-foreground">Total Patrimonio</span>
               </div>
-              <p className="text-xs text-muted-foreground">
-                {data.assets.length} activos
-              </p>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Total Deudas</CardTitle>
-              <TrendingDown className="h-4 w-4 text-red-600" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold text-red-600">
-                {formatCurrency(totalDebts)}
-              </div>
-              <p className="text-xs text-muted-foreground">
-                {data.debts.length} deudas
-              </p>
-            </CardContent>
-          </Card>
-
-          <Card className="bg-gradient-to-br from-card to-muted/50">
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Patrimonio Neto</CardTitle>
-              <Scale className="h-4 w-4 text-foreground" />
-            </CardHeader>
-            <CardContent>
-              <div className={`text-3xl font-bold ${netWorth >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                {formatCurrency(netWorth)}
-              </div>
-              <p className="text-xs text-muted-foreground">
-                Activos - Deudas
-              </p>
-            </CardContent>
-          </Card>
-        </div>
-
-        {/* Charts and Details */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          {/* Assets Section */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <TrendingUp className="h-5 w-5 text-green-600" />
-                Activos
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="h-[250px] mb-6">
-                <ResponsiveContainer width="100%" height="100%">
-                  <PieChart>
-                    <Pie
-                      data={assetsChartData}
-                      cx="50%"
-                      cy="50%"
-                      innerRadius={50}
-                      outerRadius={80}
-                      paddingAngle={2}
-                      dataKey="value"
-                    >
-                      {assetsChartData.map((_, index) => (
-                        <Cell key={`cell-${index}`} fill={ASSET_COLORS[index % ASSET_COLORS.length]} />
-                      ))}
-                    </Pie>
-                    <Tooltip formatter={(value: number) => formatCurrency(value)} />
-                    <Legend />
-                  </PieChart>
-                </ResponsiveContainer>
-              </div>
-              <div className="space-y-3">
-                {data.assets.map((asset) => (
-                  <div key={asset.name} className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <span className="text-sm">{asset.name}</span>
-                      <Badge variant="secondary" className="text-xs">
-                        {asset.category}
-                      </Badge>
-                    </div>
-                    <span className="text-sm font-mono text-green-600">
-                      {formatCurrency(asset.value)}
-                    </span>
+              <div className="flex items-baseline gap-3">
+                <div className="text-right">
+                  <div className="text-xl font-bold text-primary">
+                    {formatCurrency(totalArs)}
                   </div>
-                ))}
-              </div>
-            </CardContent>
-          </Card>
-
-          {/* Debts Section */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <TrendingDown className="h-5 w-5 text-red-600" />
-                Deudas
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="h-[250px] mb-6">
-                <ResponsiveContainer width="100%" height="100%">
-                  <PieChart>
-                    <Pie
-                      data={debtsChartData}
-                      cx="50%"
-                      cy="50%"
-                      innerRadius={50}
-                      outerRadius={80}
-                      paddingAngle={2}
-                      dataKey="value"
-                    >
-                      {debtsChartData.map((_, index) => (
-                        <Cell key={`cell-${index}`} fill={DEBT_COLORS[index % DEBT_COLORS.length]} />
-                      ))}
-                    </Pie>
-                    <Tooltip formatter={(value: number) => formatCurrency(value)} />
-                    <Legend />
-                  </PieChart>
-                </ResponsiveContainer>
-              </div>
-              <div className="space-y-3">
-                {data.debts.map((debt) => (
-                  <div key={debt.name} className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <span className="text-sm">{debt.name}</span>
-                      <Badge variant="secondary" className="text-xs">
-                        {debt.category}
-                      </Badge>
-                    </div>
-                    <span className="text-sm font-mono text-red-600">
-                      {formatCurrency(debt.value)}
-                    </span>
+                  <div className="text-xs text-muted-foreground">ARS</div>
+                </div>
+                <span className="text-muted-foreground/50 text-sm">=</span>
+                <div className="text-right">
+                  <div className="text-xl font-bold text-primary">
+                    {formatCurrency(totalUsd, 'USD')}
                   </div>
-                ))}
+                  <div className="text-xs text-muted-foreground">USD</div>
+                </div>
               </div>
-            </CardContent>
-          </Card>
-        </div>
+            </div>
+          </CardContent>
+        </Card>
 
-        {/* Breakdown by Category */}
+        {/* Patrimonio List */}
         <Card>
           <CardHeader>
-            <CardTitle>Resumen por Categoría</CardTitle>
+            <CardTitle>Patrimonio</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-              {data.breakdown.map((item) => (
-                <div key={item.category} className="p-4 border rounded-lg">
-                  <div className="text-sm text-muted-foreground">{item.category}</div>
-                  <div className="text-xl font-bold mt-1">
-                    {formatCurrency(item.amount)}
+            <div className="space-y-4">
+              {/* Disponible */}
+              <div className="flex items-center justify-between p-4 border rounded-lg">
+                <div className="flex items-center gap-3">
+                  <Wallet className="h-5 w-5 text-cyan-600" />
+                  <div>
+                    <div className="font-medium">Disponible</div>
+                    <div className="text-sm text-muted-foreground">ARS</div>
                   </div>
                 </div>
-              ))}
+                <div className="text-right">
+                  <div className="text-lg font-bold">{formatCurrency(disponibleArs)}</div>
+                  {dolarBlue && (
+                    <div className="text-sm text-muted-foreground">
+                      {formatCurrency(disponibleUsd, 'USD')}
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Bitcoin Holdings */}
+              {bitcoinQuantity > 0 && (
+                <div className="flex items-center justify-between p-4 border rounded-lg">
+                  <div className="flex items-center gap-3">
+                    <Bitcoin className="h-5 w-5 text-orange-500" />
+                    <div>
+                      <div className="font-medium">Bitcoin</div>
+                      <div className="text-sm text-muted-foreground">
+                        {bitcoinQuantity} BTC
+                      </div>
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    <div className="text-lg font-bold">
+                      {btcUsd ? formatCurrency(btcValueUsd, 'USD') : '-'}
+                    </div>
+                    {dolarBlue && (
+                      <div className="text-sm text-muted-foreground">
+                        {formatCurrency(btcValueArs)}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* Nominales SPY500 CEDEAR */}
+              {cedearQuantity > 0 && (
+                <div className="flex items-center justify-between p-4 border rounded-lg">
+                  <div className="flex items-center gap-3">
+                    <TrendingUp className="h-5 w-5 text-blue-600" />
+                    <div>
+                      <div className="font-medium">Nominales SPY500 CEDEAR</div>
+                      <div className="text-sm text-muted-foreground">
+                        {cedearQuantity} CEDEARs
+                      </div>
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    <div className="text-lg font-bold">
+                      {cedearValueArs > 0 ? formatCurrency(cedearValueArs) : '-'}
+                    </div>
+                    {cedearValueUsd > 0 && (
+                      <div className="text-sm text-muted-foreground">
+                        {formatCurrency(cedearValueUsd, 'USD')}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* Ahorros en USD */}
+              {usdFisicoTotal > 0 && (
+                <div className="flex items-center justify-between p-4 border rounded-lg">
+                  <div className="flex items-center gap-3">
+                    <DollarSign className="h-5 w-5 text-green-600" />
+                    <div>
+                      <div className="font-medium">Ahorros en USD</div>
+                      <div className="text-sm text-muted-foreground">
+                        USD Físico
+                      </div>
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    <div className="text-lg font-bold">
+                      {formatCurrency(usdFisicoTotal, 'USD')}
+                    </div>
+                    {dolarBlue && (
+                      <div className="text-sm text-muted-foreground">
+                        {formatCurrency(usdFisicoValueArs)}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* Patrimonio en USD */}
+              {patrimonioUsdTotal > 0 && (
+                <div className="flex items-center justify-between p-4 border rounded-lg">
+                  <div className="flex items-center gap-3">
+                    <DollarSign className="h-5 w-5 text-purple-600" />
+                    <div>
+                      <div className="font-medium">Patrimonio en USD</div>
+                      <div className="text-sm text-muted-foreground">
+                        {patrimonioUsdArray.length} items
+                      </div>
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    <div className="text-lg font-bold">
+                      {formatCurrency(patrimonioUsdTotal, 'USD')}
+                    </div>
+                    {dolarBlue && (
+                      <div className="text-sm text-muted-foreground">
+                        {formatCurrency(patrimonioUsdTotalArs)}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* Detalle de Patrimonio USD */}
+              {patrimonioUsdArray.length > 0 && (
+                <div className="mt-4 pt-4 border-t">
+                  <div className="text-sm font-medium mb-3">Detalle Patrimonio USD:</div>
+                  <div className="space-y-2">
+                    {patrimonioUsdArray.map((item, index) => (
+                      <div key={index} className="flex items-center justify-between p-2 bg-muted/50 rounded">
+                        <span className="text-sm">{item.description}</span>
+                        <span className="text-sm font-mono">
+                          {formatCurrency(item.value_usd, 'USD')}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
           </CardContent>
         </Card>

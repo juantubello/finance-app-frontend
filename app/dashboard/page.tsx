@@ -1,34 +1,80 @@
 'use client'
 
+import { useState, useEffect } from 'react'
 import { useMonthYear } from '@/src/contexts/MonthYearContext'
 import { Header } from '@/src/components/Header'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { LoadingPage } from '@/src/components/LoadingState'
 import { formatCurrency, getMonthName } from '@/src/lib/format'
-import { USE_DEMO_DATA } from '@/src/lib/api'
-import { getDemoMonthlySummary } from '@/src/lib/dummy'
-import { ArrowDownIcon, ArrowUpIcon, PiggyBankIcon, ScaleIcon } from 'lucide-react'
+import { fetchMonthlySummary, fetchCurrentLiquidity } from '@/src/lib/api'
+import type { MonthlySummary } from '@/src/types/finance'
+import { ArrowDownIcon, ArrowUpIcon, PiggyBankIcon, ScaleIcon, Wallet } from 'lucide-react'
 import { PieChart, Pie, Cell, ResponsiveContainer, Legend, Tooltip } from 'recharts'
 
 const COLORS = ['#2563eb', '#16a34a', '#dc2626', '#f59e0b', '#8b5cf6']
 
 export default function DashboardPage() {
   const { year, month } = useMonthYear()
+  const [summary, setSummary] = useState<MonthlySummary | null>(null)
+  const [liquidity, setLiquidity] = useState<number | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [loadingLiquidity, setLoadingLiquidity] = useState(true)
+  const [error, setError] = useState<string | null>(null)
 
-  // TODO: Replace with actual API call when backend is ready
-  // import { fetchMonthlySummary } from '@/src/lib/api'
-  // const summary = await fetchMonthlySummary(year, month)
-  
-  // For now, use demo data
-  const summary = USE_DEMO_DATA 
-    ? getDemoMonthlySummary(year, month)
-    : null
+  useEffect(() => {
+    const loadData = async () => {
+      setLoading(true)
+      setError(null)
+      try {
+        const summaryData = await fetchMonthlySummary(year, month)
+        setSummary(summaryData)
+      } catch (err) {
+        console.error('Error loading dashboard data:', err)
+        setError(err instanceof Error ? err.message : 'Error al cargar los datos del dashboard')
+      } finally {
+        setLoading(false)
+      }
+    }
 
-  if (!summary) {
+    loadData()
+  }, [year, month])
+
+  useEffect(() => {
+    const loadLiquidity = async () => {
+      setLoadingLiquidity(true)
+      try {
+        const liquidityData = await fetchCurrentLiquidity()
+        setLiquidity(liquidityData.current)
+      } catch (err) {
+        console.error('Error loading liquidity:', err)
+        // Don't set error, just keep null
+      } finally {
+        setLoadingLiquidity(false)
+      }
+    }
+
+    loadLiquidity()
+  }, [])
+
+  if (loading) {
+    return (
+      <div>
+        <Header title="Dashboard" />
+        <LoadingPage />
+      </div>
+    )
+  }
+
+  if (error || !summary) {
     return (
       <div>
         <Header title="Dashboard" />
         <div className="p-4 md:p-6">
-          <p className="text-muted-foreground">Cargando...</p>
+          <Card>
+            <CardContent className="pt-6">
+              <p className="text-destructive">{error || 'No se pudieron cargar los datos del dashboard'}</p>
+            </CardContent>
+          </Card>
         </div>
       </div>
     )
@@ -42,14 +88,33 @@ export default function DashboardPage() {
   return (
     <div>
       <Header title="Dashboard" />
-      <div className="p-4 md:p-6 space-y-6">
+      <div className="p-4 md:p-6 space-y-6 max-w-full overflow-x-hidden">
         {/* Period indicator */}
         <div className="text-sm text-muted-foreground">
           Resumen de {getMonthName(month)} {year}
         </div>
 
         {/* Summary Cards */}
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
+          {/* Liquidez - Primera */}
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">Disponible</CardTitle>
+              <Wallet className="h-4 w-4 text-cyan-600" />
+            </CardHeader>
+            <CardContent>
+              {loadingLiquidity ? (
+                <div className="text-2xl font-bold text-cyan-600 animate-pulse">
+                  Cargando...
+                </div>
+              ) : (
+                <div className="text-2xl font-bold text-cyan-600">
+                  {liquidity !== null ? formatCurrency(liquidity) : formatCurrency(0)}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm font-medium">Ingresos</CardTitle>
@@ -100,7 +165,7 @@ export default function DashboardPage() {
         </div>
 
         {/* Top Categories */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 w-full">
           <Card>
             <CardHeader>
               <CardTitle>Top Categorías de Gastos</CardTitle>

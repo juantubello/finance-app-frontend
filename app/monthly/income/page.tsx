@@ -1,39 +1,73 @@
 'use client'
 
+import { useState, useEffect } from 'react'
 import { useMonthYear } from '@/src/contexts/MonthYearContext'
 import { Header } from '@/src/components/Header'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { TransactionTable } from '@/src/components/TransactionTable'
 import { CategoryBreakdown } from '@/src/components/CategoryBreakdown'
 import { ExchangeRateCard } from '@/src/components/ExchangeRateCard'
+import { LoadingPage } from '@/src/components/LoadingState'
 import { formatCurrency, getMonthName } from '@/src/lib/format'
-import { USE_DEMO_DATA } from '@/src/lib/api'
-import { getDemoMonthlyIncome, INCOME_CATEGORIES } from '@/src/lib/dummy'
+import { fetchMonthlyIncome } from '@/src/lib/api'
+import type { MonthlyListResponse, Transaction } from '@/src/types/finance'
 import { Wallet } from 'lucide-react'
 
 export default function IncomePage() {
   const { year, month } = useMonthYear()
+  const [data, setData] = useState<MonthlyListResponse<Transaction> | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
 
-  // TODO: Replace with actual API call when backend is ready
-  const data = USE_DEMO_DATA 
-    ? getDemoMonthlyIncome(year, month)
-    : null
+  useEffect(() => {
+    const loadData = async () => {
+      setLoading(true)
+      setError(null)
+      try {
+        const incomeData = await fetchMonthlyIncome(year, month)
+        setData(incomeData)
+      } catch (err) {
+        console.error('Error loading income:', err)
+        setError(err instanceof Error ? err.message : 'Error al cargar los ingresos')
+      } finally {
+        setLoading(false)
+      }
+    }
 
-  if (!data) {
+    loadData()
+  }, [year, month])
+
+  if (loading) {
+    return (
+      <div>
+        <Header title="Ingresos Mensual" />
+        <LoadingPage />
+      </div>
+    )
+  }
+
+  if (error || !data) {
     return (
       <div>
         <Header title="Ingresos Mensual" />
         <div className="p-4 md:p-6">
-          <p className="text-muted-foreground">Cargando...</p>
+          <Card>
+            <CardContent className="pt-6">
+              <p className="text-destructive">{error || 'No se pudieron cargar los ingresos'}</p>
+            </CardContent>
+          </Card>
         </div>
       </div>
     )
   }
 
+  // Get unique categories from data for the filter
+  const categories = Array.from(new Set(data.items.map(t => t.category))).sort()
+
   return (
     <div>
       <Header title="Ingresos Mensual" />
-      <div className="p-4 md:p-6 space-y-6">
+      <div className="p-4 md:p-6 space-y-6 max-w-full overflow-x-hidden">
         {/* Period indicator */}
         <div className="text-sm text-muted-foreground">
           Ingresos de {getMonthName(month)} {year}
@@ -61,18 +95,20 @@ export default function IncomePage() {
         </div>
 
         {/* Content Grid */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          {/* Table - takes 2 columns */}
-          <div className="lg:col-span-2">
-            <Card>
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
+          {/* Table - takes 2 columns, stretches to fill */}
+          <div className="lg:col-span-2 flex flex-col min-h-0">
+            <Card className="flex-1 flex flex-col min-h-[600px]">
               <CardHeader>
                 <CardTitle>Detalle de Ingresos</CardTitle>
               </CardHeader>
-              <CardContent>
-                <TransactionTable 
-                  transactions={data.items} 
-                  categories={INCOME_CATEGORIES}
-                />
+              <CardContent className="flex-1 flex flex-col min-h-0">
+                <div className="flex-1 overflow-hidden">
+                  <TransactionTable 
+                    transactions={data.items} 
+                    categories={categories}
+                  />
+                </div>
               </CardContent>
             </Card>
           </div>

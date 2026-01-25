@@ -5,8 +5,30 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+      args:
+        # 🔧 CONFIGURACIÓN DEL BACKEND:
+        # El endpoint del backend se lee del archivo .env
+        # Si no existe .env, usa el valor por defecto: http://backend:3001
+        # 
+        # ⚠️ IMPORTANTE: 
+        # - Si cambias el valor en .env, necesitas rebuild: docker-compose build --no-cache
+        # - Usa el NOMBRE DEL SERVICIO del backend (no localhost ni IP)
+        # - Ejemplo: http://backend:3001, http://api:8080, etc.
+        NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL:-http://backend:3001}
     ports:
-      - "3000:3000"
+      - "${PORT:-3005}:3005"
     environment:
-      - NEXT_PUBLIC_API_BASE_URL=http://localhost:3001
+      - PORT=3005
+      - NODE_ENV=production
     restart: unless-stopped
+    # Usa la red por defecto de Docker o crea una nueva si no existe
+    networks:
+      - finance-network
+    # Si el backend está en el host (no en Docker), necesitas acceso al host
+    # En Linux, esto permite acceder al host desde el contenedor
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+networks:
+  finance-network:
+    driver: bridge
