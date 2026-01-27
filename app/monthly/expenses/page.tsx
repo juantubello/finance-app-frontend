@@ -207,7 +207,7 @@ export default function ExpensesPage() {
             <CardContent className="space-y-6">
               {/* Total General - Most Important Card */}
               <div className="p-4 sm:p-6 rounded-lg bg-gradient-to-br from-primary/20 to-primary/10 border-2 border-primary/30 shadow-lg">
-                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+                <div className="flex flex-col gap-4">
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 text-sm text-muted-foreground mb-2">
                       <CreditCard className="h-5 w-5" />
@@ -217,14 +217,14 @@ export default function ExpensesPage() {
                       {formatCurrency(cardData.total_visa + cardData.total_mastercard)}
                     </div>
                   </div>
-                  <div className="flex items-center gap-3 sm:gap-4 text-sm flex-shrink-0">
-                    <div className="text-right min-w-0 flex-1 sm:flex-none">
-                      <div className="text-muted-foreground text-xs sm:text-sm">Visa</div>
-                      <div className="font-semibold text-xs sm:text-sm break-words">{formatCurrency(cardData.total_visa)}</div>
+                  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-end gap-3 sm:gap-4 text-sm border-t pt-4 sm:border-t-0 sm:pt-0">
+                    <div className="flex items-center justify-between sm:justify-end sm:text-right sm:flex-none">
+                      <span className="text-muted-foreground text-xs sm:text-sm sm:mr-2">Visa</span>
+                      <span className="font-semibold text-xs sm:text-sm break-words">{formatCurrency(cardData.total_visa)}</span>
                     </div>
-                    <div className="text-right min-w-0 flex-1 sm:flex-none">
-                      <div className="text-muted-foreground text-xs sm:text-sm">Mastercard</div>
-                      <div className="font-semibold text-xs sm:text-sm break-words">{formatCurrency(cardData.total_mastercard)}</div>
+                    <div className="flex items-center justify-between sm:justify-end sm:text-right sm:flex-none">
+                      <span className="text-muted-foreground text-xs sm:text-sm sm:mr-2">Mastercard</span>
+                      <span className="font-semibold text-xs sm:text-sm break-words">{formatCurrency(cardData.total_mastercard)}</span>
                     </div>
                   </div>
                 </div>
