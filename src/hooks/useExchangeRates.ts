@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from 'react'
 
 export interface ExchangeRates {
   dolarBlue: number | null
+  dolarTarjeta: number | null
   btcUsd: number | null
   lastUpdated: Date | null
   isLoading: boolean
@@ -14,6 +15,7 @@ const REFRESH_INTERVAL = 60 * 60 * 1000 // 1 hour in milliseconds
 
 export function useExchangeRates(): ExchangeRates {
   const [dolarBlue, setDolarBlue] = useState<number | null>(null)
+  const [dolarTarjeta, setDolarTarjeta] = useState<number | null>(null)
   const [btcUsd, setBtcUsd] = useState<number | null>(null)
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null)
   const [isLoading, setIsLoading] = useState(true)
@@ -24,15 +26,17 @@ export function useExchangeRates(): ExchangeRates {
     setError(null)
 
     try {
-      // Fetch Dolar Blue from Bluelytics API
+      // Fetch Dolar Blue and Dolar Tarjeta from Bluelytics API
       const dolarResponse = await fetch('https://api.bluelytics.com.ar/v2/latest')
       if (dolarResponse.ok) {
         const dolarData = await dolarResponse.json()
         // value_sell is the selling price of USD in ARS
         setDolarBlue(dolarData.blue?.value_sell || null)
+        // Dolar tarjeta (tarjeta) is also available in the response
+        setDolarTarjeta(dolarData.tarjeta?.value_sell || dolarData.tarjeta?.value || null)
       }
     } catch (err) {
-      console.error('Error fetching Dolar Blue:', err)
+      console.error('Error fetching Dolar rates:', err)
       // Don't set error, just keep previous value or null
     }
 

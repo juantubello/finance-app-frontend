@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { useMonthYear } from '@/src/contexts/MonthYearContext'
 import { Header } from '@/src/components/Header'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -39,10 +39,57 @@ export default function ExpensesPage() {
   const [incomeData, setIncomeData] = useState<MonthlyListResponse<Transaction> | null>(null)
   const [cardData, setCardData] = useState<CardStatementsResponse | null>(null)
   const [cardCategories, setCardCategories] = useState<CardCategoriesResponse | null>(null)
-  const [selectedCard, setSelectedCard] = useState<'visa' | 'mastercard'>('visa')
+  const [selectedCard, setSelectedCard] = useState<'visa' | 'mastercard' | 'all'>('visa')
   const [loading, setLoading] = useState(true)
   const [loadingCards, setLoadingCards] = useState(true)
   const [error, setError] = useState<string | null>(null)
+
+  // Get consumos for selected card
+  const currentConsumos = useMemo(() => {
+    if (!cardData) return []
+    if (selectedCard === 'all') {
+      // Add card type information when combining both cards
+      const visaConsumos = cardData.consumos.visa.map(c => ({ ...c, cardType: 'visa' as const }))
+      const mastercardConsumos = cardData.consumos.mastercard.map(c => ({ ...c, cardType: 'mastercard' as const }))
+      return [...visaConsumos, ...mastercardConsumos]
+    }
+    return cardData.consumos[selectedCard].map(c => ({ ...c, cardType: selectedCard })) || []
+  }, [cardData, selectedCard])
+
+  // Calculate totals by currency for Visa and Mastercard
+  const visaTotals = useMemo(() => {
+    if (!cardData) return { ars: 0, usd: 0 }
+    const visaConsumos = cardData.consumos.visa
+    const conversionRate = cardData.conversion_amount || 1
+    
+    const ars = visaConsumos
+      .filter(c => !c.descripcion.toUpperCase().includes('USD'))
+      .reduce((sum, c) => sum + c.importe, 0)
+    
+    // For USD consumos, convert back to USD by dividing by conversion_rate
+    const usd = visaConsumos
+      .filter(c => c.descripcion.toUpperCase().includes('USD'))
+      .reduce((sum, c) => sum + (c.importe / conversionRate), 0)
+    
+    return { ars, usd }
+  }, [cardData])
+
+  const mastercardTotals = useMemo(() => {
+    if (!cardData) return { ars: 0, usd: 0 }
+    const mastercardConsumos = cardData.consumos.mastercard
+    const conversionRate = cardData.conversion_amount || 1
+    
+    const ars = mastercardConsumos
+      .filter(c => !c.descripcion.toUpperCase().includes('USD'))
+      .reduce((sum, c) => sum + c.importe, 0)
+    
+    // For USD consumos, convert back to USD by dividing by conversion_rate
+    const usd = mastercardConsumos
+      .filter(c => c.descripcion.toUpperCase().includes('USD'))
+      .reduce((sum, c) => sum + (c.importe / conversionRate), 0)
+    
+    return { ars, usd }
+  }, [cardData])
 
   useEffect(() => {
     const loadData = async () => {
@@ -119,10 +166,23 @@ export default function ExpensesPage() {
     total: cat.total,
   })) || []
 
-  const COLORS = ['#16a34a', '#0891b2', '#7c3aed', '#db2777', '#ea580c', '#ca8a04', '#64748b']
-
-  // Get consumos for selected card
-  const currentConsumos = cardData?.consumos[selectedCard] || []
+  // Function to get color for each category
+  const getCategoryColor = (categoria: string): string => {
+    const catLower = categoria.toLowerCase()
+    
+    if (catLower.includes('mercadolibre')) return '#facc15' // Amarillo más vibrante
+    if (catLower.includes('osde')) return '#2563eb' // Azul
+    if (catLower.includes('personal')) return '#06b6d4' // Celeste
+    if (catLower.includes('abl')) return '#16a34a' // Verde
+    if (catLower.includes('delivery')) return 'url(#deliveryGradient)' // Gradiente naranja-rojo
+    if (catLower.includes('transporte')) return '#8b5cf6' // Violeta
+    if (catLower.includes('subscripciones') || catLower.includes('suscripciones')) {
+      return 'url(#subscriptionGradient)' // Gradiente negro-rojo
+    }
+    
+    // Color por defecto si no coincide
+    return '#64748b'
+  }
 
 
   return (
@@ -218,13 +278,35 @@ export default function ExpensesPage() {
                     </div>
                   </div>
                   <div className="flex flex-col sm:flex-row sm:items-center sm:justify-end gap-3 sm:gap-4 text-sm border-t pt-4 sm:border-t-0 sm:pt-0">
-                    <div className="flex items-center justify-between sm:justify-end sm:text-right sm:flex-none">
-                      <span className="text-muted-foreground text-xs sm:text-sm sm:mr-2">Visa</span>
-                      <span className="font-semibold text-xs sm:text-sm break-words">{formatCurrency(cardData.total_visa)}</span>
+                    <div className="flex flex-col sm:items-end gap-1 sm:flex-none">
+                      <div className="flex items-center justify-between sm:justify-end gap-2">
+                        <span className="text-muted-foreground text-xs sm:text-sm">Visa</span>
+                        <span className="font-semibold text-xs sm:text-sm break-words">{formatCurrency(cardData.total_visa)}</span>
+                      </div>
+                      <div className="flex items-center gap-2 text-xs text-muted-foreground/80">
+                        <span>ARS: {formatCurrency(visaTotals.ars)}</span>
+                        {visaTotals.usd > 0 && (
+                          <>
+                            <span>•</span>
+                            <span>USD: {formatCurrency(visaTotals.usd, 'USD')}</span>
+                          </>
+                        )}
+                      </div>
                     </div>
-                    <div className="flex items-center justify-between sm:justify-end sm:text-right sm:flex-none">
-                      <span className="text-muted-foreground text-xs sm:text-sm sm:mr-2">Mastercard</span>
-                      <span className="font-semibold text-xs sm:text-sm break-words">{formatCurrency(cardData.total_mastercard)}</span>
+                    <div className="flex flex-col sm:items-end gap-1 sm:flex-none">
+                      <div className="flex items-center justify-between sm:justify-end gap-2">
+                        <span className="text-muted-foreground text-xs sm:text-sm">Mastercard</span>
+                        <span className="font-semibold text-xs sm:text-sm break-words">{formatCurrency(cardData.total_mastercard)}</span>
+                      </div>
+                      <div className="flex items-center gap-2 text-xs text-muted-foreground/80">
+                        <span>ARS: {formatCurrency(mastercardTotals.ars)}</span>
+                        {mastercardTotals.usd > 0 && (
+                          <>
+                            <span>•</span>
+                            <span>USD: {formatCurrency(mastercardTotals.usd, 'USD')}</span>
+                          </>
+                        )}
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -273,13 +355,30 @@ export default function ExpensesPage() {
                   <h4 className="text-sm font-medium mb-4">Gastos por Categoría</h4>
                   <div className="h-[600px]">
                     <ResponsiveContainer width="100%" height="100%">
-                      <BarChart data={chartData} layout="vertical" margin={{ left: 0, right: 20 }}>
-                        <XAxis type="number" hide />
-                        <YAxis 
+                      <BarChart data={chartData} margin={{ top: 20, right: 30, left: 20, bottom: 5 }}>
+                        <defs>
+                          <linearGradient id="subscriptionGradient" x1="0%" y1="0%" x2="0%" y2="100%">
+                            <stop offset="0%" stopColor="#000000" />
+                            <stop offset="100%" stopColor="#ef4444" />
+                          </linearGradient>
+                          <linearGradient id="deliveryGradient" x1="0%" y1="0%" x2="0%" y2="100%">
+                            <stop offset="0%" stopColor="#f97316" />
+                            <stop offset="60%" stopColor="#dc2626" />
+                            <stop offset="100%" stopColor="#b91c1c" />
+                          </linearGradient>
+                        </defs>
+                        <XAxis 
                           type="category" 
                           dataKey="categoria" 
-                          width={120}
+                          angle={-45}
+                          textAnchor="end"
+                          height={100}
                           tick={{ fontSize: 12 }}
+                        />
+                        <YAxis 
+                          type="number"
+                          tick={{ fontSize: 12 }}
+                          tickFormatter={(value) => formatCurrency(value)}
                         />
                         <Tooltip 
                           formatter={(value: number) => formatCurrency(value)}
@@ -289,13 +388,13 @@ export default function ExpensesPage() {
                             borderRadius: '8px',
                           }}
                         />
-                        <Bar dataKey="total" radius={[0, 4, 4, 0]}>
-                          {chartData.map((_, index) => (
-                            <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                        <Bar dataKey="total" radius={[4, 4, 0, 0]}>
+                          {chartData.map((item, index) => (
+                            <Cell key={`cell-${index}`} fill={getCategoryColor(item.categoria)} />
                           ))}
                           <LabelList 
                             dataKey="total" 
-                            position="right"
+                            position="top"
                             formatter={(value: number) => formatCurrency(value)}
                             style={{ fontSize: '11px', fill: 'var(--foreground)' }}
                           />
@@ -307,8 +406,18 @@ export default function ExpensesPage() {
 
                 {/* Consumos Table */}
                 <div className="flex flex-col">
-                  <h4 className="text-sm font-medium mb-4">Detalle de Consumos</h4>
-                  <Tabs value={selectedCard} onValueChange={(v) => setSelectedCard(v as 'visa' | 'mastercard')} className="flex-1 flex flex-col">
+                  <div className="flex items-center justify-between mb-4">
+                    <h4 className="text-sm font-medium">Detalle de Consumos</h4>
+                    {cardData.conversion_amount && (
+                      <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                        <span>Dólar Tarjeta:</span>
+                        <span className="font-semibold">
+                          ${cardData.conversion_amount.toLocaleString('es-AR', { maximumFractionDigits: 2 })}
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                  <Tabs value={selectedCard} onValueChange={(v) => setSelectedCard(v as 'visa' | 'mastercard' | 'all')} className="flex-1 flex flex-col">
                     <TabsList className="mb-4">
                       <TabsTrigger value="visa" className="flex items-center gap-2">
                         <span className="text-blue-600 dark:text-blue-400 font-bold">VISA</span>
@@ -316,10 +425,17 @@ export default function ExpensesPage() {
                       <TabsTrigger value="mastercard" className="flex items-center gap-2">
                         <span className="text-red-600 dark:text-red-400 font-bold">MASTERCARD</span>
                       </TabsTrigger>
+                      <TabsTrigger value="all" className="flex items-center gap-2">
+                        <span className="font-bold">TODAS</span>
+                      </TabsTrigger>
                     </TabsList>
                     <TabsContent value={selectedCard} className="mt-0 flex-1 flex flex-col min-h-0">
                       <div className="flex-1 min-h-[600px]">
-                        <CardConsumosTable consumos={currentConsumos} />
+                        <CardConsumosTable 
+                          consumos={currentConsumos} 
+                          showCardType={selectedCard === 'all'}
+                          conversionAmount={cardData.conversion_amount}
+                        />
                       </div>
                     </TabsContent>
                   </Tabs>

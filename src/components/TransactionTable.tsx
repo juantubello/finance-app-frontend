@@ -11,18 +11,18 @@ import {
   TableFooter,
 } from '@/components/ui/table'
 import { Input } from '@/components/ui/input'
+import { Button } from '@/components/ui/button'
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from '@/components/ui/popover'
+import { Checkbox } from '@/components/ui/checkbox'
 import { Badge } from '@/components/ui/badge'
 import type { Transaction } from '@/src/types/finance'
 import { formatCurrency, formatShortDate } from '@/src/lib/format'
 import { EmptyState } from './EmptyState'
-import { Search } from 'lucide-react'
+import { Search, ChevronDown } from 'lucide-react'
 
 interface TransactionTableProps {
   transactions: Transaction[]
@@ -31,17 +31,29 @@ interface TransactionTableProps {
 
 export function TransactionTable({ transactions, categories }: TransactionTableProps) {
   const [searchText, setSearchText] = useState('')
-  const [selectedCategory, setSelectedCategory] = useState<string>('all')
+  const [selectedCategories, setSelectedCategories] = useState<string[]>([])
 
   const filteredTransactions = useMemo(() => {
     return transactions.filter((t) => {
       const matchesSearch = searchText === '' || 
         t.description.toLowerCase().includes(searchText.toLowerCase())
-      const matchesCategory = selectedCategory === 'all' || 
-        t.category === selectedCategory
+      const matchesCategory = selectedCategories.length === 0 || 
+        selectedCategories.includes(t.category)
       return matchesSearch && matchesCategory
     })
-  }, [transactions, searchText, selectedCategory])
+  }, [transactions, searchText, selectedCategories])
+
+  const toggleCategory = (category: string) => {
+    setSelectedCategories(prev => 
+      prev.includes(category)
+        ? prev.filter(c => c !== category)
+        : [...prev, category]
+    )
+  }
+
+  const clearCategories = () => {
+    setSelectedCategories([])
+  }
 
   const filteredTotal = useMemo(() => {
     return filteredTransactions.reduce((sum, t) => sum + t.amount, 0)
@@ -60,19 +72,57 @@ export function TransactionTable({ transactions, categories }: TransactionTableP
             className="pl-9"
           />
         </div>
-        <Select value={selectedCategory} onValueChange={setSelectedCategory}>
-          <SelectTrigger className="w-full sm:w-[180px]">
-            <SelectValue placeholder="Categoría" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">Todas las categorías</SelectItem>
-            {categories.map((cat) => (
-              <SelectItem key={cat} value={cat}>
-                {cat}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+        <Popover>
+          <PopoverTrigger asChild>
+            <Button variant="outline" className="w-full sm:w-[200px] justify-between">
+              <span>
+                {selectedCategories.length === 0 
+                  ? 'Todas las categorías' 
+                  : `${selectedCategories.length} categoría${selectedCategories.length > 1 ? 's' : ''}`
+                }
+              </span>
+              <ChevronDown className="h-4 w-4 opacity-50" />
+            </Button>
+          </PopoverTrigger>
+          <PopoverContent className="w-[200px] p-0" align="start">
+            <div className="p-2 border-b">
+              <div className="flex items-center justify-between">
+                <span className="text-sm font-medium">Categorías</span>
+                {selectedCategories.length > 0 && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={clearCategories}
+                    className="h-6 px-2 text-xs"
+                  >
+                    Limpiar
+                  </Button>
+                )}
+              </div>
+            </div>
+            <div className="max-h-[300px] overflow-y-auto p-2">
+              {categories.map((cat) => (
+                <div
+                  key={cat}
+                  className="flex items-center space-x-2 p-2 rounded-md hover:bg-muted cursor-pointer"
+                  onClick={() => toggleCategory(cat)}
+                >
+                  <Checkbox
+                    id={cat}
+                    checked={selectedCategories.includes(cat)}
+                    onCheckedChange={() => toggleCategory(cat)}
+                  />
+                  <label
+                    htmlFor={cat}
+                    className="text-sm font-normal cursor-pointer flex-1"
+                  >
+                    {cat}
+                  </label>
+                </div>
+              ))}
+            </div>
+          </PopoverContent>
+        </Popover>
       </div>
 
       {/* Table - fixed height to show exactly 16 rows */}
@@ -119,11 +169,11 @@ export function TransactionTable({ transactions, categories }: TransactionTableP
                     </TableRow>
                   ))}
                 </TableBody>
-                {(selectedCategory !== 'all' || searchText !== '') && filteredTransactions.length > 0 && (
+                {filteredTransactions.length > 0 && (
                   <TableFooter className="sticky bottom-0 bg-muted/50">
                     <TableRow>
                       <TableCell colSpan={3} className="text-right font-medium">
-                        Total filtrado:
+                        Total:
                       </TableCell>
                       <TableCell className="text-right font-bold font-mono">
                         {formatCurrency(filteredTotal, filteredTransactions[0]?.currency || 'ARS')}
