@@ -849,6 +849,64 @@ export async function fetchCardStatements(year: number, month: number): Promise<
   return fetchApi<CardStatementsResponse>(`/cards/statements?${params}`)
 }
 
+// Card Payment FX types
+export interface CardPaymentFxResponse {
+  success: boolean
+  year: number
+  month: number
+  conversion_amount: number | null
+  conversion_amount_cents: number | null
+  datetime: string | null
+  exists: boolean
+}
+
+export interface CardPaymentFxRequest {
+  year: number
+  month: number
+  amount: number
+}
+
+export interface CardPaymentFxPostResponse {
+  success: boolean
+  message: string
+  year: number
+  month: number
+  conversion_amount: number
+  conversion_amount_cents: number
+  statements_updated: number
+  items_updated: number
+  debug?: {
+    statements: Array<{
+      card_type: string
+      amount_ars: number
+      amount_usd: number
+      conversion_amount: number
+      total_amount_ars: number
+      amount_total_ars: number
+    }>
+  }
+}
+
+/**
+ * GET /cards/payment-fx
+ * Gets the conversion amount saved for a specific month/year
+ */
+export async function fetchCardPaymentFx(year: number, month: number): Promise<CardPaymentFxResponse> {
+  const params = buildParams({ year, month })
+  return fetchApi<CardPaymentFxResponse>(`/cards/payment-fx?${params}`)
+}
+
+/**
+ * POST /cards/payment-fx
+ * Saves or updates the conversion amount used to pay the card statement
+ */
+export async function saveCardPaymentFx(data: CardPaymentFxRequest): Promise<CardPaymentFxPostResponse> {
+  return fetchApi<CardPaymentFxPostResponse>(`/cards/payment-fx`, {
+    method: 'POST',
+    body: JSON.stringify(data),
+  })
+}
+
 /**
  * GET /cards/statements/categories
  * Returns card statements categories for a specific month

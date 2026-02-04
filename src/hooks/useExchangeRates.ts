@@ -26,17 +26,28 @@ export function useExchangeRates(): ExchangeRates {
     setError(null)
 
     try {
-      // Fetch Dolar Blue and Dolar Tarjeta from Bluelytics API
+      // Fetch Dolar Blue from Bluelytics API
       const dolarResponse = await fetch('https://api.bluelytics.com.ar/v2/latest')
       if (dolarResponse.ok) {
         const dolarData = await dolarResponse.json()
         // value_sell is the selling price of USD in ARS
         setDolarBlue(dolarData.blue?.value_sell || null)
-        // Dolar tarjeta (tarjeta) is also available in the response
-        setDolarTarjeta(dolarData.tarjeta?.value_sell || dolarData.tarjeta?.value || null)
       }
     } catch (err) {
-      console.error('Error fetching Dolar rates:', err)
+      console.error('Error fetching Dolar Blue:', err)
+      // Don't set error, just keep previous value or null
+    }
+
+    try {
+      // Fetch Dolar Tarjeta from BBVA via CriptoYa API
+      const tarjetaResponse = await fetch('https://criptoya.com/api/bancostodos')
+      if (tarjetaResponse.ok) {
+        const tarjetaData = await tarjetaResponse.json()
+        // Get BBVA ask price
+        setDolarTarjeta(tarjetaData.bbva?.ask || null)
+      }
+    } catch (err) {
+      console.error('Error fetching Dolar Tarjeta:', err)
       // Don't set error, just keep previous value or null
     }
 
@@ -70,6 +81,7 @@ export function useExchangeRates(): ExchangeRates {
 
   return {
     dolarBlue,
+    dolarTarjeta,
     btcUsd,
     lastUpdated,
     isLoading,

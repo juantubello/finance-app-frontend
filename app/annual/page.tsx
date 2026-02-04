@@ -35,6 +35,8 @@ import {
   ResponsiveContainer,
   LineChart,
   Line,
+  LabelList,
+  Customized,
 } from 'recharts'
 
 const currentYear = new Date().getFullYear()
@@ -133,16 +135,76 @@ export default function AnnualPage() {
     Ahorros: m.savings,
   }))
 
-  // Prepare card annual chart data
-  const cardChartData = cardAnnualData?.months.map((m) => {
+  // Prepare card annual chart data with month-to-month differences
+  const cardChartData = cardAnnualData?.months.map((m, index) => {
     const monthName = getMonthName(m.month)
+    const previousMonthTotal = index > 0 ? cardAnnualData.months[index - 1].total : null
+    const difference = previousMonthTotal !== null ? m.total - previousMonthTotal : null
+    const isSavings = difference !== null ? difference < 0 : null
+    const absDifference = difference !== null ? Math.abs(difference) : null
+    const differenceLabel = difference !== null 
+      ? (isSavings 
+          ? `+ ${formatCurrency(absDifference)}`
+          : `- ${formatCurrency(absDifference)}`)
+      : ''
+    
+    // Calculate percentage change
+    const percentageChange = previousMonthTotal !== null && previousMonthTotal !== 0
+      ? ((difference! / previousMonthTotal) * 100)
+      : null
+    
     return {
       name: monthName,
       Visa: m.total_visa,
       Mastercard: m.total_mastercard,
       Total: m.total,
+      difference,
+      isSavings,
+      differenceLabel,
+      percentageChange,
+      previousMonthTotal,
     }
   }) || []
+
+  // Calculate trend statistics
+  const trendStats = (() => {
+    const differences = cardChartData
+      .map(d => d.difference)
+      .filter((d): d is number => d !== null)
+    
+    if (differences.length === 0) {
+      return {
+        averageDifference: 0,
+        averagePercentageChange: 0,
+        trend: 'neutral' as const,
+        trendDescription: 'Sin datos suficientes',
+      }
+    }
+    
+    const averageDifference = differences.reduce((sum, d) => sum + d, 0) / differences.length
+    const percentageChanges = cardChartData
+      .map(d => d.percentageChange)
+      .filter((p): p is number => p !== null)
+    const averagePercentageChange = percentageChanges.length > 0
+      ? percentageChanges.reduce((sum, p) => sum + p, 0) / percentageChanges.length
+      : 0
+    
+    // Determine trend: if average is negative, it's savings trend (spending less)
+    // if average is positive, it's spending more trend
+    const trend = averageDifference < 0 ? 'savings' : averageDifference > 0 ? 'spending' : 'neutral'
+    const trendDescription = trend === 'savings'
+      ? 'Tendencia a ahorrar'
+      : trend === 'spending'
+      ? 'Tendencia a gastar más'
+      : 'Tendencia estable'
+    
+    return {
+      averageDifference,
+      averagePercentageChange,
+      trend,
+      trendDescription,
+    }
+  })()
 
   return (
     <div>
@@ -257,19 +319,19 @@ export default function AnnualPage() {
         {!loadingCards && cardAnnualData && cardChartData.length > 0 && (
           <Card>
             <CardHeader>
-              <CardTitle>Evolución de Gastos en Tarjetas {selectedYear}</CardTitle>
-              <div className="text-sm text-muted-foreground mt-2">
-                Total Anual: <span className="font-semibold">{formatCurrency(cardAnnualData.total)}</span>
-                {' | '}
-                Visa: <span className="font-semibold text-blue-600">{formatCurrency(cardAnnualData.total_visa)}</span>
-                {' | '}
-                Mastercard: <span className="font-semibold text-red-600">{formatCurrency(cardAnnualData.total_mastercard)}</span>
+              <CardTitle className="text-base sm:text-lg">Evolución de Gastos en Tarjetas {selectedYear}</CardTitle>
+              <div className="text-xs sm:text-sm text-muted-foreground mt-2 flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-0">
+                <span>Total Anual: <span className="font-semibold">{formatCurrency(cardAnnualData.total)}</span></span>
+                <span className="hidden sm:inline">{' | '}</span>
+                <span>Visa: <span className="font-semibold text-blue-600">{formatCurrency(cardAnnualData.total_visa)}</span></span>
+                <span className="hidden sm:inline">{' | '}</span>
+                <span>Mastercard: <span className="font-semibold text-red-600">{formatCurrency(cardAnnualData.total_mastercard)}</span></span>
               </div>
             </CardHeader>
             <CardContent>
-              <div className="h-[400px]">
+              <div className="h-[300px] sm:h-[400px]">
                 <ResponsiveContainer width="100%" height="100%">
-                  <LineChart data={cardChartData}>
+                  <LineChart data={cardChartData} margin={{ top: 20, right: 10, left: 0, bottom: 5 }}>
                     <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
                     <XAxis 
                       dataKey="name" 
@@ -278,7 +340,7 @@ export default function AnnualPage() {
                     />
                     <YAxis 
                       tick={{ fontSize: 12 }}
-                      tickFormatter={(value) => `${(value / 1000).toFixed(0)}k`}
+                      tickFormatter={(value) => `${(value / 1000000).toFixed(1)}M`}
                       className="text-muted-foreground"
                     />
                     <Tooltip 
@@ -314,9 +376,170 @@ export default function AnnualPage() {
                       strokeDasharray="5 5"
                       dot={{ r: 5 }}
                       activeDot={{ r: 7 }}
-                    />
+                    >
+                      <LabelList
+                        dataKey="differenceLabel"
+                        position="top"
+                        formatter={(value: string, entry: any, index: number) => {
+                          // Skip first month (index 0)
+                          if (index === 0 || !value || value === '') return ''
+                          return value
+                        }}
+                        content={(props: any) => {
+                          if (!props || !props.payload) return null
+                          
+                          const { x, y, value, payload } = props
+                          const index = payload.index
+                          
+                          // Skip first month and null/empty values
+                          if (index === 0 || !value || value === '' || value === null) return null
+                          
+                          const entry = cardChartData[index]
+                          if (!entry || entry.difference === null) return null
+                          
+                          const isSavings = entry.isSavings
+                          
+                          return (
+                            <text
+                              x={x}
+                              y={y - 25}
+                              fill={isSavings ? '#16a34a' : '#dc2626'}
+                              fontSize={11}
+                              fontWeight="bold"
+                              textAnchor="middle"
+                            >
+                              {value}
+                            </text>
+                          )
+                        }}
+                      />
+                    </Line>
                   </LineChart>
                 </ResponsiveContainer>
+              </div>
+              
+              {/* Month-to-month differences table and trend analysis */}
+              <div className="mt-6 space-y-4">
+                {/* Trend Summary */}
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <Card>
+                    <CardContent className="pt-4">
+                      <div className="text-xs sm:text-sm text-muted-foreground">Promedio Mensual</div>
+                      <div className={`text-base sm:text-lg font-semibold mt-1 break-words ${
+                        trendStats.averageDifference < 0 
+                          ? 'text-green-600' 
+                          : trendStats.averageDifference > 0 
+                          ? 'text-red-600' 
+                          : 'text-muted-foreground'
+                      }`}>
+                        {trendStats.averageDifference < 0 
+                          ? `+${formatCurrency(Math.abs(trendStats.averageDifference))}`
+                          : trendStats.averageDifference > 0
+                          ? `-${formatCurrency(trendStats.averageDifference)}`
+                          : formatCurrency(0)}
+                      </div>
+                      <div className="text-xs text-muted-foreground mt-1">
+                        {trendStats.averageDifference < 0 ? 'Ahorro promedio' : trendStats.averageDifference > 0 ? 'Gasto adicional promedio' : 'Sin variación'}
+                      </div>
+                    </CardContent>
+                  </Card>
+                  
+                  <Card>
+                    <CardContent className="pt-4">
+                      <div className="text-xs sm:text-sm text-muted-foreground">Cambio Porcentual Promedio</div>
+                      <div className={`text-base sm:text-lg font-semibold mt-1 ${
+                        trendStats.averagePercentageChange < 0 
+                          ? 'text-green-600' 
+                          : trendStats.averagePercentageChange > 0 
+                          ? 'text-red-600' 
+                          : 'text-muted-foreground'
+                      }`}>
+                        {trendStats.averagePercentageChange < 0 
+                          ? `+${Math.abs(trendStats.averagePercentageChange).toFixed(1)}%`
+                          : trendStats.averagePercentageChange > 0
+                          ? `-${trendStats.averagePercentageChange.toFixed(1)}%`
+                          : '0%'}
+                      </div>
+                      <div className="text-xs text-muted-foreground mt-1">
+                        {trendStats.averagePercentageChange < 0 ? 'Reducción promedio' : trendStats.averagePercentageChange > 0 ? 'Incremento promedio' : 'Sin variación'}
+                      </div>
+                    </CardContent>
+                  </Card>
+                  
+                  <Card>
+                    <CardContent className="pt-4">
+                      <div className="text-xs sm:text-sm text-muted-foreground">Tendencia</div>
+                      <div className={`text-base sm:text-lg font-semibold mt-1 break-words ${
+                        trendStats.trend === 'savings'
+                          ? 'text-green-600'
+                          : trendStats.trend === 'spending'
+                          ? 'text-red-600'
+                          : 'text-muted-foreground'
+                      }`}>
+                        {trendStats.trendDescription}
+                      </div>
+                      <div className="text-xs text-muted-foreground mt-1">
+                        Basado en {cardChartData.filter(d => d.difference !== null).length} comparaciones
+                      </div>
+                    </CardContent>
+                  </Card>
+                </div>
+
+                {/* Month-to-month differences timeline */}
+                <div className="border rounded-lg overflow-hidden">
+                  <div className="overflow-x-auto">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead className="min-w-[80px]">Mes</TableHead>
+                          <TableHead className="text-right min-w-[120px]">Gasto del Mes</TableHead>
+                          <TableHead className="text-right min-w-[120px]">Diferencia</TableHead>
+                          <TableHead className="text-right min-w-[100px]">% Cambio</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {cardChartData.map((entry, index) => (
+                          <TableRow key={index}>
+                            <TableCell className="font-medium">{entry.name}</TableCell>
+                            <TableCell className="text-right font-mono text-sm">
+                              {formatCurrency(entry.Total)}
+                            </TableCell>
+                            <TableCell className={`text-right font-mono text-sm ${
+                              entry.difference === null
+                                ? 'text-muted-foreground'
+                                : entry.isSavings
+                                ? 'text-green-600'
+                                : 'text-red-600'
+                            }`}>
+                              {entry.difference === null 
+                                ? '-' 
+                                : entry.isSavings
+                                ? `+${formatCurrency(Math.abs(entry.difference))}`
+                                : `-${formatCurrency(entry.difference)}`}
+                            </TableCell>
+                            <TableCell className={`text-right font-mono text-sm ${
+                              entry.percentageChange === null
+                                ? 'text-muted-foreground'
+                                : entry.percentageChange < 0
+                                ? 'text-green-600'
+                                : entry.percentageChange > 0
+                                ? 'text-red-600'
+                                : 'text-muted-foreground'
+                            }`}>
+                              {entry.percentageChange === null 
+                                ? '-' 
+                                : entry.percentageChange < 0
+                                ? `+${Math.abs(entry.percentageChange).toFixed(1)}%`
+                                : entry.percentageChange > 0
+                                ? `-${entry.percentageChange.toFixed(1)}%`
+                                : '0%'}
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                </div>
               </div>
             </CardContent>
           </Card>

@@ -1,17 +1,21 @@
 'use client'
 
 import { useState, useEffect, useMemo } from 'react'
+import { useIsMobile } from '@/hooks/use-mobile'
 import { useMonthYear } from '@/src/contexts/MonthYearContext'
 import { Header } from '@/src/components/Header'
+import { useExchangeRates } from '@/src/hooks/useExchangeRates'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
 import { TransactionTable } from '@/src/components/TransactionTable'
 import { CategoryBreakdown } from '@/src/components/CategoryBreakdown'
 import { LoadingPage } from '@/src/components/LoadingState'
 import { formatCurrency, getMonthName } from '@/src/lib/format'
-import { fetchMonthlyExpenses, fetchCardStatements, fetchCardCategories, fetchMonthlyIncome } from '@/src/lib/api'
+import { fetchMonthlyExpenses, fetchCardStatements, fetchCardCategories, fetchMonthlyIncome, fetchCardPaymentFx } from '@/src/lib/api'
 import type { MonthlyListResponse, Transaction } from '@/src/types/finance'
-import type { CardStatementsResponse, CardCategoriesResponse } from '@/src/lib/api'
+import type { CardStatementsResponse, CardCategoriesResponse, CardPaymentFxResponse } from '@/src/lib/api'
+import { CardPaymentNotification } from '@/src/components/CardPaymentNotification'
 import { CardConsumosTable } from '@/src/components/CardConsumosTable'
 import { RealVsObjectiveComparison } from '@/src/components/RealVsObjectiveComparison'
 import { Receipt, CreditCard, CalendarClock, Banknote } from 'lucide-react'
@@ -35,14 +39,19 @@ import {
 
 export default function ExpensesPage() {
   const { year, month } = useMonthYear()
+  const isMobile = useIsMobile()
+  const { dolarTarjeta } = useExchangeRates()
   const [data, setData] = useState<MonthlyListResponse<Transaction> | null>(null)
   const [incomeData, setIncomeData] = useState<MonthlyListResponse<Transaction> | null>(null)
   const [cardData, setCardData] = useState<CardStatementsResponse | null>(null)
   const [cardCategories, setCardCategories] = useState<CardCategoriesResponse | null>(null)
+  const [paymentFx, setPaymentFx] = useState<CardPaymentFxResponse | null>(null)
   const [selectedCard, setSelectedCard] = useState<'visa' | 'mastercard' | 'all'>('visa')
   const [loading, setLoading] = useState(true)
   const [loadingCards, setLoadingCards] = useState(true)
+  const [loadingPaymentFx, setLoadingPaymentFx] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [paymentDialogOpen, setPaymentDialogOpen] = useState(false)
 
   // Get consumos for selected card
   const currentConsumos = useMemo(() => {
@@ -60,7 +69,7 @@ export default function ExpensesPage() {
   const visaTotals = useMemo(() => {
     if (!cardData) return { ars: 0, usd: 0 }
     const visaConsumos = cardData.consumos.visa
-    const conversionRate = cardData.conversion_amount || 1
+    const conversionRate = dolarTarjeta || cardData.conversion_amount || 1
     
     const ars = visaConsumos
       .filter(c => !c.descripcion.toUpperCase().includes('USD'))
@@ -72,12 +81,12 @@ export default function ExpensesPage() {
       .reduce((sum, c) => sum + (c.importe / conversionRate), 0)
     
     return { ars, usd }
-  }, [cardData])
+  }, [cardData, dolarTarjeta])
 
   const mastercardTotals = useMemo(() => {
     if (!cardData) return { ars: 0, usd: 0 }
     const mastercardConsumos = cardData.consumos.mastercard
-    const conversionRate = cardData.conversion_amount || 1
+    const conversionRate = dolarTarjeta || cardData.conversion_amount || 1
     
     const ars = mastercardConsumos
       .filter(c => !c.descripcion.toUpperCase().includes('USD'))
@@ -89,7 +98,21 @@ export default function ExpensesPage() {
       .reduce((sum, c) => sum + (c.importe / conversionRate), 0)
     
     return { ars, usd }
-  }, [cardData])
+  }, [cardData, dolarTarjeta])
+
+  // Calculate total for "Pago tarjetas" category
+  const pagoTarjetasTotal = useMemo(() => {
+    if (!data) return 0
+    return data.items
+      .filter(t => t.category.toLowerCase().includes('pago') && t.category.toLowerCase().includes('tarjeta'))
+      .reduce((sum, t) => sum + t.amount, 0)
+  }, [data])
+
+  // Get unique categories from data for the filter
+  const categories = useMemo(() => {
+    if (!data) return []
+    return Array.from(new Set(data.items.map(t => t.category))).sort()
+  }, [data])
 
   useEffect(() => {
     const loadData = async () => {
@@ -117,12 +140,16 @@ export default function ExpensesPage() {
     const loadCardData = async () => {
       setLoadingCards(true)
       try {
-        const [statements, categories] = await Promise.all([
+        const [statements, categories, paymentFxData] = await Promise.all([
           fetchCardStatements(year, month),
           fetchCardCategories(year, month),
+          fetchCardPaymentFx(year, month).catch(() => null), // Don't fail if this fails
         ])
         setCardData(statements)
         setCardCategories(categories)
+        if (paymentFxData) {
+          setPaymentFx(paymentFxData)
+        }
       } catch (err) {
         console.error('Error loading card data:', err)
       } finally {
@@ -132,6 +159,23 @@ export default function ExpensesPage() {
 
     loadCardData()
   }, [year, month])
+
+  const handlePaymentSuccess = async () => {
+    // Reload card data and payment FX after successful save
+    setLoadingPaymentFx(true)
+    try {
+      const [statements, paymentFxData] = await Promise.all([
+        fetchCardStatements(year, month),
+        fetchCardPaymentFx(year, month),
+      ])
+      setCardData(statements)
+      setPaymentFx(paymentFxData)
+    } catch (err) {
+      console.error('Error reloading data after payment:', err)
+    } finally {
+      setLoadingPaymentFx(false)
+    }
+  }
 
   if (loading) {
     return (
@@ -156,9 +200,6 @@ export default function ExpensesPage() {
       </div>
     )
   }
-
-  // Get unique categories from data for the filter
-  const categories = Array.from(new Set(data.items.map(t => t.category))).sort()
 
   // Prepare chart data from categories
   const chartData = cardCategories?.categories.map((cat) => ({
@@ -259,10 +300,40 @@ export default function ExpensesPage() {
         ) : cardData ? (
           <Card>
             <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <CreditCard className="h-5 w-5" />
-                Resumen Tarjeta
-              </CardTitle>
+              <div className="flex flex-col gap-4">
+                <CardTitle className="flex items-center gap-2">
+                  <CreditCard className="h-5 w-5" />
+                  Resumen Tarjeta
+                </CardTitle>
+                <div className="flex flex-col sm:flex-row sm:items-center gap-3 text-xs">
+                  <div className="flex flex-wrap items-center gap-3">
+                    {dolarTarjeta && (
+                      <div className="text-muted-foreground">
+                        <span className="font-medium">DolarBBVA Hoy:</span>{' '}
+                        <span className="font-semibold">${dolarTarjeta.toLocaleString('es-AR', { maximumFractionDigits: 2 })}</span>
+                      </div>
+                    )}
+                    {paymentFx && (
+                      <div className="text-muted-foreground">
+                        <span className="font-medium">DolarBBVA dia de pago:</span>{' '}
+                        <span className="font-semibold">
+                          {paymentFx.exists && paymentFx.conversion_amount
+                            ? `$${paymentFx.conversion_amount.toLocaleString('es-AR', { maximumFractionDigits: 2 })}`
+                            : 'No registrado'}
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                  <Button
+                    size="sm"
+                    onClick={() => setPaymentDialogOpen(true)}
+                    disabled={loadingPaymentFx}
+                    className="w-full sm:w-auto text-xs h-7 px-2"
+                  >
+                    Notificar día de pago
+                  </Button>
+                </div>
+              </div>
             </CardHeader>
             <CardContent className="space-y-6">
               {/* Total General - Most Important Card */}
@@ -276,6 +347,14 @@ export default function ExpensesPage() {
                     <div className="text-2xl sm:text-3xl font-bold text-primary break-words">
                       {formatCurrency(cardData.total_visa + cardData.total_mastercard)}
                     </div>
+                    {pagoTarjetasTotal > 0 && (
+                      <div className="flex items-center gap-2 text-sm mt-2">
+                        <span className="text-muted-foreground">Pago real:</span>
+                        <span className="font-semibold text-primary">
+                          {formatCurrency(pagoTarjetasTotal)}
+                        </span>
+                      </div>
+                    )}
                   </div>
                   <div className="flex flex-col sm:flex-row sm:items-center sm:justify-end gap-3 sm:gap-4 text-sm border-t pt-4 sm:border-t-0 sm:pt-0">
                     <div className="flex flex-col sm:items-end gap-1 sm:flex-none">
@@ -353,32 +432,39 @@ export default function ExpensesPage() {
                 {/* Chart */}
                 <div>
                   <h4 className="text-sm font-medium mb-4">Gastos por Categoría</h4>
-                  <div className="h-[600px]">
+                  <div className="h-[500px] md:h-[600px]">
                     <ResponsiveContainer width="100%" height="100%">
-                      <BarChart data={chartData} margin={{ top: 20, right: 30, left: 20, bottom: 5 }}>
+                      <BarChart 
+                        data={chartData} 
+                        layout="vertical"
+                        margin={{ 
+                          top: 5, 
+                          right: 80, 
+                          left: 0, 
+                          bottom: 5 
+                        }}
+                      >
                         <defs>
-                          <linearGradient id="subscriptionGradient" x1="0%" y1="0%" x2="0%" y2="100%">
+                          <linearGradient id="subscriptionGradient" x1="0%" y1="0%" x2="100%" y2="0%">
                             <stop offset="0%" stopColor="#000000" />
                             <stop offset="100%" stopColor="#ef4444" />
                           </linearGradient>
-                          <linearGradient id="deliveryGradient" x1="0%" y1="0%" x2="0%" y2="100%">
+                          <linearGradient id="deliveryGradient" x1="0%" y1="0%" x2="100%" y2="0%">
                             <stop offset="0%" stopColor="#f97316" />
                             <stop offset="60%" stopColor="#dc2626" />
                             <stop offset="100%" stopColor="#b91c1c" />
                           </linearGradient>
                         </defs>
                         <XAxis 
-                          type="category" 
-                          dataKey="categoria" 
-                          angle={-45}
-                          textAnchor="end"
-                          height={100}
-                          tick={{ fontSize: 12 }}
+                          type="number"
+                          hide
                         />
                         <YAxis 
-                          type="number"
-                          tick={{ fontSize: 12 }}
-                          tickFormatter={(value) => formatCurrency(value)}
+                          type="category" 
+                          dataKey="categoria"
+                          width={isMobile ? 100 : 120}
+                          tick={{ fontSize: isMobile ? 10 : 11 }}
+                          className="text-xs"
                         />
                         <Tooltip 
                           formatter={(value: number) => formatCurrency(value)}
@@ -386,17 +472,22 @@ export default function ExpensesPage() {
                             backgroundColor: 'var(--card)', 
                             border: '1px solid var(--border)',
                             borderRadius: '8px',
+                            fontSize: '12px',
                           }}
                         />
-                        <Bar dataKey="total" radius={[4, 4, 0, 0]}>
+                        <Bar dataKey="total" radius={[0, 4, 4, 0]}>
                           {chartData.map((item, index) => (
                             <Cell key={`cell-${index}`} fill={getCategoryColor(item.categoria)} />
                           ))}
                           <LabelList 
                             dataKey="total" 
-                            position="top"
+                            position="right"
                             formatter={(value: number) => formatCurrency(value)}
-                            style={{ fontSize: '11px', fill: 'var(--foreground)' }}
+                            style={{ 
+                              fontSize: isMobile ? '10px' : '11px', 
+                              fill: 'var(--foreground)',
+                              fontWeight: '500'
+                            }}
                           />
                         </Bar>
                       </BarChart>
@@ -408,14 +499,6 @@ export default function ExpensesPage() {
                 <div className="flex flex-col">
                   <div className="flex items-center justify-between mb-4">
                     <h4 className="text-sm font-medium">Detalle de Consumos</h4>
-                    {cardData.conversion_amount && (
-                      <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                        <span>Dólar Tarjeta:</span>
-                        <span className="font-semibold">
-                          ${cardData.conversion_amount.toLocaleString('es-AR', { maximumFractionDigits: 2 })}
-                        </span>
-                      </div>
-                    )}
                   </div>
                   <Tabs value={selectedCard} onValueChange={(v) => setSelectedCard(v as 'visa' | 'mastercard' | 'all')} className="flex-1 flex flex-col">
                     <TabsList className="mb-4">
@@ -434,7 +517,7 @@ export default function ExpensesPage() {
                         <CardConsumosTable 
                           consumos={currentConsumos} 
                           showCardType={selectedCard === 'all'}
-                          conversionAmount={cardData.conversion_amount}
+                          conversionAmount={dolarTarjeta || cardData.conversion_amount}
                         />
                       </div>
                     </TabsContent>
@@ -445,6 +528,16 @@ export default function ExpensesPage() {
           </Card>
         ) : null}
       </div>
+
+      {/* Payment Notification Dialog */}
+      <CardPaymentNotification
+        open={paymentDialogOpen}
+        onOpenChange={setPaymentDialogOpen}
+        year={year}
+        month={month}
+        defaultDolarTarjeta={dolarTarjeta}
+        onSuccess={handlePaymentSuccess}
+      />
     </div>
   )
 }
