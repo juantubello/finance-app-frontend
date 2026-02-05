@@ -22,7 +22,7 @@ import { Badge } from '@/components/ui/badge'
 import type { Transaction } from '@/src/types/finance'
 import { formatCurrency, formatShortDate } from '@/src/lib/format'
 import { EmptyState } from './EmptyState'
-import { Search, ChevronDown } from 'lucide-react'
+import { Search, ChevronDown, ArrowUp, ArrowDown, ArrowUpDown } from 'lucide-react'
 
 interface TransactionTableProps {
   transactions: Transaction[]
@@ -32,16 +32,44 @@ interface TransactionTableProps {
 export function TransactionTable({ transactions, categories }: TransactionTableProps) {
   const [searchText, setSearchText] = useState('')
   const [selectedCategories, setSelectedCategories] = useState<string[]>([])
+  const [sortBy, setSortBy] = useState<'importe' | 'fecha'>('fecha')
+  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc')
 
   const filteredTransactions = useMemo(() => {
-    return transactions.filter((t) => {
+    const filtered = transactions.filter((t) => {
       const matchesSearch = searchText === '' || 
         t.description.toLowerCase().includes(searchText.toLowerCase())
       const matchesCategory = selectedCategories.length === 0 || 
         selectedCategories.includes(t.category)
       return matchesSearch && matchesCategory
     })
-  }, [transactions, searchText, selectedCategories])
+    
+    // Sort by selected field
+    const sorted = [...filtered].sort((a, b) => {
+      if (sortBy === 'importe') {
+        if (sortOrder === 'asc') {
+          return a.amount - b.amount
+        } else {
+          return b.amount - a.amount
+        }
+      } else {
+        // Sort by fecha - parse ISO date string directly
+        const parseDate = (dateString: string): number => {
+          const date = new Date(dateString)
+          return isNaN(date.getTime()) ? 0 : date.getTime()
+        }
+        const dateA = parseDate(a.date)
+        const dateB = parseDate(b.date)
+        if (sortOrder === 'asc') {
+          return dateA - dateB
+        } else {
+          return dateB - dateA
+        }
+      }
+    })
+    
+    return sorted
+  }, [transactions, searchText, selectedCategories, sortBy, sortOrder])
 
   const toggleCategory = (category: string) => {
     setSelectedCategories(prev => 
@@ -138,10 +166,62 @@ export function TransactionTable({ transactions, categories }: TransactionTableP
               <Table className="w-full">
                 <TableHeader className="sticky top-0 bg-background z-10">
                   <TableRow>
-                    <TableHead className="text-left pl-2">Importe</TableHead>
+                    <TableHead className={`text-left pl-2 ${sortBy === 'importe' ? 'bg-slate-700 dark:bg-slate-700' : ''}`}>
+                      <button
+                        onClick={() => {
+                          if (sortBy === 'importe') {
+                            setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc')
+                          } else {
+                            setSortBy('importe')
+                            setSortOrder('desc')
+                          }
+                        }}
+                        className={`flex items-center gap-1 hover:text-white transition-colors group ${
+                          sortBy === 'importe' ? 'text-white font-semibold' : ''
+                        }`}
+                        title="Ordenar por importe"
+                      >
+                        Importe
+                        {sortBy === 'importe' ? (
+                          sortOrder === 'asc' ? (
+                            <ArrowUp className="h-4 w-4 text-white" />
+                          ) : (
+                            <ArrowDown className="h-4 w-4 text-white" />
+                          )
+                        ) : (
+                          <ArrowUpDown className="h-3.5 w-3.5 text-muted-foreground" />
+                        )}
+                      </button>
+                    </TableHead>
                     <TableHead>Descripción</TableHead>
                     <TableHead className="hidden sm:table-cell">Categoría</TableHead>
-                    <TableHead className="w-[100px]">Fecha</TableHead>
+                    <TableHead className={`w-[100px] ${sortBy === 'fecha' ? 'bg-slate-700 dark:bg-slate-700' : ''}`}>
+                      <button
+                        onClick={() => {
+                          if (sortBy === 'fecha') {
+                            setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc')
+                          } else {
+                            setSortBy('fecha')
+                            setSortOrder('desc')
+                          }
+                        }}
+                        className={`flex items-center gap-1 hover:text-white transition-colors group ${
+                          sortBy === 'fecha' ? 'text-white font-semibold' : ''
+                        }`}
+                        title="Ordenar por fecha"
+                      >
+                        Fecha
+                        {sortBy === 'fecha' ? (
+                          sortOrder === 'asc' ? (
+                            <ArrowUp className="h-4 w-4 text-white" />
+                          ) : (
+                            <ArrowDown className="h-4 w-4 text-white" />
+                          )
+                        ) : (
+                          <ArrowUpDown className="h-3.5 w-3.5 text-muted-foreground" />
+                        )}
+                      </button>
+                    </TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>

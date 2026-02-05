@@ -22,10 +22,17 @@ import {
 import { Badge } from '@/components/ui/badge'
 import { Switch } from '@/components/ui/switch'
 import { Label } from '@/components/ui/label'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
 import type { CardConsumo } from '@/src/lib/api'
 import { formatCurrency } from '@/src/lib/format'
 import { EmptyState } from './EmptyState'
-import { Search, X, Plus, ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react'
+import { Search, X, Plus, ArrowUpDown, ArrowUp, ArrowDown, Settings } from 'lucide-react'
 
 type CardConsumoWithType = CardConsumo & { cardType?: 'visa' | 'mastercard' }
 
@@ -40,7 +47,9 @@ export function CardConsumosTable({ consumos, showCardType = false, conversionAm
   const [newFilterText, setNewFilterText] = useState('')
   const [selectedHolder, setSelectedHolder] = useState<string>('all')
   const [showCuotasALiberar, setShowCuotasALiberar] = useState(false)
+  const [paymentFilter, setPaymentFilter] = useState<'all' | 'cuotas' | 'pago-unico'>('all')
   const [showUsd, setShowUsd] = useState(false)
+  const [sortBy, setSortBy] = useState<'importe' | 'fecha'>('importe')
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc')
 
   const holders = useMemo(() => {
@@ -90,6 +99,20 @@ export function CardConsumosTable({ consumos, showCardType = false, conversionAm
         return false
       }
       
+      // Filter by payment type: 'all', 'cuotas', or 'pago-unico'
+      if (paymentFilter === 'cuotas') {
+        // Only show cuotas
+        if (!c.is_cuota) {
+          return false
+        }
+      } else if (paymentFilter === 'pago-unico') {
+        // Only show non-cuotas (single payments)
+        if (c.is_cuota) {
+          return false
+        }
+      }
+      // If paymentFilter === 'all', show everything (no filter)
+      
       // Match if description contains ANY of the active filters (OR logic)
       let matchesSearch = true
       if (descriptionFilters.length > 0) {
@@ -103,17 +126,89 @@ export function CardConsumosTable({ consumos, showCardType = false, conversionAm
       return matchesSearch && matchesHolder
     })
     
-    // Sort by importe
+    // Sort by selected field
     const sorted = [...filtered].sort((a, b) => {
-      if (sortOrder === 'asc') {
-        return a.importe - b.importe
+      if (sortBy === 'importe') {
+        if (sortOrder === 'asc') {
+          return a.importe - b.importe
+        } else {
+          return b.importe - a.importe
+        }
       } else {
-        return b.importe - a.importe
+        // Sort by fecha (format: DD-MMM-YY, e.g., "09-Ago-25")
+        const parseDate = (fecha: string): number => {
+          if (!fecha || typeof fecha !== 'string') return 0
+          
+          // Try parsing DD-MMM-YY format first (e.g., "09-Ago-25")
+          const parts = fecha.trim().split('-')
+          if (parts.length === 3) {
+            const day = parseInt(parts[0]?.trim() || '0', 10)
+            const monthStr = parts[1]?.trim().toLowerCase()
+            const yearStr = parts[2]?.trim()
+            
+            // Map Spanish month abbreviations to numbers
+            const monthMap: Record<string, number> = {
+              'ene': 1, 'feb': 2, 'mar': 3, 'abr': 4, 'may': 5, 'jun': 6,
+              'jul': 7, 'ago': 8, 'sep': 9, 'oct': 10, 'nov': 11, 'dic': 12
+            }
+            
+            const month = monthMap[monthStr] || 0
+            
+            // Parse year (YY format, assume 20XX)
+            let year = parseInt(yearStr || '0', 10)
+            if (year < 100) {
+              year = 2000 + year
+            }
+            
+            if (!isNaN(day) && month > 0 && day > 0 && day <= 31) {
+              const date = new Date(year, month - 1, day)
+              const timestamp = date.getTime()
+              
+              // Validate the date was created correctly
+              if (!isNaN(timestamp) && date.getDate() === day && date.getMonth() === month - 1) {
+                return timestamp
+              }
+            }
+          }
+          
+          // Fallback: try DD/MM format
+          const slashParts = fecha.trim().split('/')
+          if (slashParts.length === 2) {
+            const day = parseInt(slashParts[0]?.trim() || '0', 10)
+            const month = parseInt(slashParts[1]?.trim() || '0', 10)
+            
+            if (!isNaN(day) && !isNaN(month) && day > 0 && day <= 31 && month > 0 && month <= 12) {
+              const currentYear = new Date().getFullYear()
+              const date = new Date(currentYear, month - 1, day)
+              const timestamp = date.getTime()
+              
+              if (!isNaN(timestamp) && date.getDate() === day && date.getMonth() === month - 1) {
+                return timestamp
+              }
+            }
+          }
+          
+          // If parsing fails, return a very old date so invalid dates go to the end
+          return 0
+        }
+        const dateA = parseDate(a.fecha)
+        const dateB = parseDate(b.fecha)
+        
+        // Handle invalid dates - put them at the end
+        if (dateA === 0 && dateB === 0) return 0
+        if (dateA === 0) return 1 // Invalid dates go to end
+        if (dateB === 0) return -1 // Invalid dates go to end
+        
+        if (sortOrder === 'asc') {
+          return dateA - dateB
+        } else {
+          return dateB - dateA
+        }
       }
     })
     
     return sorted
-  }, [consumos, descriptionFilters, selectedHolder, showCuotasALiberar, sortOrder])
+  }, [consumos, descriptionFilters, selectedHolder, showCuotasALiberar, paymentFilter, sortBy, sortOrder])
 
   const filteredTotal = useMemo(() => {
     return filteredConsumos.reduce((sum, c) => sum + c.importe, 0)
@@ -123,7 +218,7 @@ export function CardConsumosTable({ consumos, showCardType = false, conversionAm
     return descripcion.toUpperCase().includes('USD')
   }
 
-  const showFilteredTotal = (selectedHolder !== 'all' || descriptionFilters.length > 0 || showCuotasALiberar) && filteredConsumos.length > 0
+  const showFilteredTotal = (selectedHolder !== 'all' || descriptionFilters.length > 0 || showCuotasALiberar || paymentFilter !== 'all') && filteredConsumos.length > 0
 
   return (
     <div className="space-y-4 flex flex-col h-full">
@@ -185,7 +280,7 @@ export function CardConsumosTable({ consumos, showCardType = false, conversionAm
           )}
         </div>
 
-        {/* Holder Filter and Cuotas a Liberar */}
+        {/* Holder Filter and Options Menu */}
         <div className="flex flex-col sm:flex-row gap-3">
           <Select value={selectedHolder} onValueChange={setSelectedHolder}>
             <SelectTrigger className="w-full sm:w-[180px]">
@@ -201,37 +296,108 @@ export function CardConsumosTable({ consumos, showCardType = false, conversionAm
             </SelectContent>
           </Select>
           
-          {/* Cuotas a Liberar Toggle */}
-          <div className="flex items-center gap-3 px-3 py-2 rounded-md border bg-background">
-            <Switch
-              id="cuotas-a-liberar"
-              checked={showCuotasALiberar}
-              onCheckedChange={setShowCuotasALiberar}
-            />
-            <Label 
-              htmlFor="cuotas-a-liberar" 
-              className="text-sm font-medium cursor-pointer"
-            >
-              Cuotas a liberar
-            </Label>
-          </div>
-          
-          {/* Show USD Toggle */}
-          {conversionAmount && (
-            <div className="flex items-center gap-3 px-3 py-2 rounded-md border bg-background">
-              <Switch
-                id="show-usd"
-                checked={showUsd}
-                onCheckedChange={setShowUsd}
-              />
-              <Label 
-                htmlFor="show-usd" 
-                className="text-sm font-medium cursor-pointer"
-              >
-                Show USD
-              </Label>
-            </div>
-          )}
+          {/* Options Dropdown Menu */}
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="outline" className="w-full sm:w-auto">
+                <Settings className="h-4 w-4 mr-2" />
+                Opciones
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-56">
+              <DropdownMenuLabel>Filtros y opciones</DropdownMenuLabel>
+              <DropdownMenuSeparator />
+              
+              {/* Cuotas a Liberar Toggle */}
+              <div className="flex items-center justify-between px-2 py-1.5">
+                <Label 
+                  htmlFor="cuotas-a-liberar-dropdown" 
+                  className="text-sm font-medium cursor-pointer"
+                >
+                  Cuotas a liberar
+                </Label>
+                <Switch
+                  id="cuotas-a-liberar-dropdown"
+                  checked={showCuotasALiberar}
+                  onCheckedChange={setShowCuotasALiberar}
+                />
+              </div>
+              
+              {/* Payment Type Filter */}
+              <DropdownMenuSeparator />
+              <DropdownMenuLabel>Tipo de pago</DropdownMenuLabel>
+              <div className="px-2 py-1.5 space-y-2">
+                <div className="flex items-center gap-2">
+                  <input
+                    type="radio"
+                    id="filter-all"
+                    name="payment-filter"
+                    checked={paymentFilter === 'all'}
+                    onChange={() => setPaymentFilter('all')}
+                    className="h-4 w-4"
+                  />
+                  <Label 
+                    htmlFor="filter-all" 
+                    className="text-sm font-medium cursor-pointer flex-1"
+                  >
+                    Todos (pago y cuotas)
+                  </Label>
+                </div>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="radio"
+                    id="filter-cuotas"
+                    name="payment-filter"
+                    checked={paymentFilter === 'cuotas'}
+                    onChange={() => setPaymentFilter('cuotas')}
+                    className="h-4 w-4"
+                  />
+                  <Label 
+                    htmlFor="filter-cuotas" 
+                    className="text-sm font-medium cursor-pointer flex-1"
+                  >
+                    Solo cuotas
+                  </Label>
+                </div>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="radio"
+                    id="filter-pago-unico"
+                    name="payment-filter"
+                    checked={paymentFilter === 'pago-unico'}
+                    onChange={() => setPaymentFilter('pago-unico')}
+                    className="h-4 w-4"
+                  />
+                  <Label 
+                    htmlFor="filter-pago-unico" 
+                    className="text-sm font-medium cursor-pointer flex-1"
+                  >
+                    Solo pago único
+                  </Label>
+                </div>
+              </div>
+              
+              {/* Show USD Toggle */}
+              {conversionAmount && (
+                <>
+                  <DropdownMenuSeparator />
+                  <div className="flex items-center justify-between px-2 py-1.5">
+                    <Label 
+                      htmlFor="show-usd-dropdown" 
+                      className="text-sm font-medium cursor-pointer"
+                    >
+                      Mostrar USD
+                    </Label>
+                    <Switch
+                      id="show-usd-dropdown"
+                      checked={showUsd}
+                      onCheckedChange={setShowUsd}
+                    />
+                  </div>
+                </>
+              )}
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
       </div>
 
@@ -258,21 +424,61 @@ export function CardConsumosTable({ consumos, showCardType = false, conversionAm
               <Table>
                 <TableHeader className="sticky top-0 bg-background z-10">
                   <TableRow>
-                    <TableHead className="text-right">
+                    <TableHead className={`text-right ${sortBy === 'importe' ? 'bg-slate-700 dark:bg-slate-700' : ''}`}>
                       <button
-                        onClick={() => setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc')}
-                        className="flex items-center gap-1 hover:text-foreground transition-colors"
+                        onClick={() => {
+                          if (sortBy === 'importe') {
+                            setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc')
+                          } else {
+                            setSortBy('importe')
+                            setSortOrder('desc')
+                          }
+                        }}
+                        className={`flex items-center gap-1 hover:text-white transition-colors group ml-auto ${
+                          sortBy === 'importe' ? 'text-white font-semibold' : ''
+                        }`}
+                        title="Ordenar por importe"
                       >
                         Importe
-                        {sortOrder === 'asc' ? (
-                          <ArrowUp className="h-4 w-4" />
+                        {sortBy === 'importe' ? (
+                          sortOrder === 'asc' ? (
+                            <ArrowUp className="h-4 w-4 text-white" />
+                          ) : (
+                            <ArrowDown className="h-4 w-4 text-white" />
+                          )
                         ) : (
-                          <ArrowDown className="h-4 w-4" />
+                          <ArrowUpDown className="h-3.5 w-3.5 text-muted-foreground" />
                         )}
                       </button>
                     </TableHead>
                     <TableHead>Descripción</TableHead>
-                    <TableHead className="w-[100px]">Fecha</TableHead>
+                    <TableHead className={`w-[100px] ${sortBy === 'fecha' ? 'bg-slate-700 dark:bg-slate-700' : ''}`}>
+                      <button
+                        onClick={() => {
+                          if (sortBy === 'fecha') {
+                            setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc')
+                          } else {
+                            setSortBy('fecha')
+                            setSortOrder('desc')
+                          }
+                        }}
+                        className={`flex items-center gap-1 hover:text-white transition-colors group ${
+                          sortBy === 'fecha' ? 'text-white font-semibold' : ''
+                        }`}
+                        title="Ordenar por fecha"
+                      >
+                        Fecha
+                        {sortBy === 'fecha' ? (
+                          sortOrder === 'asc' ? (
+                            <ArrowUp className="h-4 w-4 text-white" />
+                          ) : (
+                            <ArrowDown className="h-4 w-4 text-white" />
+                          )
+                        ) : (
+                          <ArrowUpDown className="h-3.5 w-3.5 text-muted-foreground" />
+                        )}
+                      </button>
+                    </TableHead>
                     <TableHead className="hidden sm:table-cell">Titular</TableHead>
                   </TableRow>
                 </TableHeader>

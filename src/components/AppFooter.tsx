@@ -1,7 +1,7 @@
 'use client'
 
 export function AppFooter() {
-  const version = '1.0.0' // Puedes actualizar esto desde package.json si lo necesitas dinámico
+  const version = '1.1.0' // Puedes actualizar esto desde package.json si lo necesitas dinámico
   
   return (
     <footer className="w-full border-t bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 mt-auto pb-safe md:pb-0">
