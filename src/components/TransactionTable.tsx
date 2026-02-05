@@ -138,17 +138,17 @@ export function TransactionTable({ transactions, categories }: TransactionTableP
               <Table className="w-full">
                 <TableHeader className="sticky top-0 bg-background z-10">
                   <TableRow>
-                    <TableHead className="w-[100px]">Fecha</TableHead>
+                    <TableHead className="text-left pl-2">Importe</TableHead>
                     <TableHead>Descripción</TableHead>
                     <TableHead className="hidden sm:table-cell">Categoría</TableHead>
-                    <TableHead className="text-right">Importe</TableHead>
+                    <TableHead className="w-[100px]">Fecha</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {filteredTransactions.map((transaction) => (
                     <TableRow key={transaction.uuid}>
-                      <TableCell className="font-mono text-sm">
-                        {formatShortDate(transaction.date)}
+                      <TableCell className="text-left font-mono pl-2">
+                        {formatCurrency(transaction.amount, transaction.currency).replace(/\$\s*/, '$ ')}
                       </TableCell>
                       <TableCell>
                         <div>
@@ -163,8 +163,8 @@ export function TransactionTable({ transactions, categories }: TransactionTableP
                       <TableCell className="hidden sm:table-cell">
                         <Badge variant="secondary">{transaction.category}</Badge>
                       </TableCell>
-                      <TableCell className="text-right font-mono">
-                        {formatCurrency(transaction.amount, transaction.currency)}
+                      <TableCell className="font-mono text-sm">
+                        {formatShortDate(transaction.date)}
                       </TableCell>
                     </TableRow>
                   ))}
@@ -172,11 +172,9 @@ export function TransactionTable({ transactions, categories }: TransactionTableP
                 {filteredTransactions.length > 0 && (
                   <TableFooter className="sticky bottom-0 bg-muted/50">
                     <TableRow>
-                      <TableCell colSpan={3} className="text-right font-medium">
-                        Total:
-                      </TableCell>
-                      <TableCell className="text-right font-bold font-mono">
-                        {formatCurrency(filteredTotal, filteredTransactions[0]?.currency || 'ARS')}
+                      <TableCell colSpan={4} className="text-left font-bold font-mono pl-2">
+                        <span className="font-medium mr-2">Total:</span>
+                        {formatCurrency(filteredTotal, filteredTransactions[0]?.currency || 'ARS').replace(/\$\s*/, '$ ')}
                       </TableCell>
                     </TableRow>
                   </TableFooter>

@@ -575,7 +575,7 @@ export default function AnnualPage() {
                 <TableFooter>
                   <TableRow>
                     <TableCell className="font-bold">Total</TableCell>
-                    <TableCell className="text-right text-orange-600 font-mono font-bold">
+                    <TableCell className="text-left text-orange-600 font-mono font-bold">
                       {formatCurrency(
                         Array.from(unusualData.values()).reduce((sum, val) => sum + val, 0)
                       )}
@@ -626,16 +626,16 @@ export default function AnnualPage() {
                 <TableFooter>
                   <TableRow>
                     <TableCell className="font-bold">Total</TableCell>
-                    <TableCell className="text-right text-green-600 font-mono font-bold">
+                    <TableCell className="text-left text-green-600 font-mono font-bold">
                       {formatCurrency(data.totals.income)}
                     </TableCell>
-                    <TableCell className="text-right text-red-600 font-mono font-bold">
+                    <TableCell className="text-left text-red-600 font-mono font-bold">
                       {formatCurrency(data.totals.expenses)}
                     </TableCell>
-                    <TableCell className="text-right text-blue-600 font-mono font-bold">
+                    <TableCell className="text-left text-blue-600 font-mono font-bold">
                       {formatCurrency(data.totals.savings)}
                     </TableCell>
-                    <TableCell className={`text-right font-mono font-bold ${data.totals.balance >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                    <TableCell className={`text-left font-mono font-bold ${data.totals.balance >= 0 ? 'text-green-600' : 'text-red-600'}`}>
                       {formatCurrency(data.totals.balance)}
                     </TableCell>
                   </TableRow>
