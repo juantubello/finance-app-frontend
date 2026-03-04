@@ -5,6 +5,9 @@ const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || process.env.API_BAS
 /**
  * Next.js API Route que actúa como proxy para todas las peticiones al backend
  * Esto evita problemas de CORS y permite manejar mejor las cancelaciones
+ * 
+ * IMPORTANTE: Esta ruta está en /proxy-api/* en lugar de /api/proxy/* para evitar
+ * que Cloudflare Access la intercepte, ya que Cloudflare Access protege /api/*
  */
 export async function GET(
   request: NextRequest,

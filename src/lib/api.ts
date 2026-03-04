@@ -18,9 +18,14 @@ import { getMonthName } from '@/src/lib/format'
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:3000'
 
 // Usar API proxy de Next.js para evitar problemas de CORS
-// En el cliente, las peticiones van a /api/proxy/* que luego hace proxy al backend real
-const USE_API_PROXY = typeof window !== 'undefined' // Solo en el cliente
-const PROXY_BASE_URL = '/api/proxy'
+// En el cliente, las peticiones van a /proxy-api/* que luego hace proxy al backend real
+// Usamos /proxy-api en lugar de /api/proxy para evitar que Cloudflare Access lo intercepte
+const PROXY_BASE_URL = '/proxy-api'
+
+// Función helper para detectar si estamos en el cliente
+function isClient(): boolean {
+  return typeof window !== 'undefined'
+}
 
 // Toggle for demo mode - set to false when backend is ready
 export const USE_DEMO_DATA = true
@@ -30,22 +35,35 @@ export const USE_DEMO_DATA = true
 // Example: headers: { 'Authorization': `Bearer ${token}` }
 async function fetchApi<T>(endpoint: string, options?: RequestInit): Promise<T> {
   // Usar proxy en el cliente para evitar CORS, directo al backend en el servidor
-  const baseUrl = USE_API_PROXY ? PROXY_BASE_URL : API_BASE_URL
+  // Evaluar en tiempo de ejecución, no en tiempo de módulo
+  const useProxy = isClient()
+  const baseUrl = useProxy ? PROXY_BASE_URL : API_BASE_URL
   const url = `${baseUrl}${endpoint}`
   
   // Enable detailed logging in development
   const isDev = process.env.NODE_ENV === 'development'
   const startTime = Date.now()
   
-  if (isDev) {
-    console.log(`[API] Fetching: ${url}`, { 
+  // Log siempre en desarrollo, incluso antes del try
+  if (isDev || useProxy) {
+    console.log(`[API] Starting fetch: ${url}`, { 
       method: options?.method || 'GET',
       hasSignal: !!options?.signal,
-      usingProxy: USE_API_PROXY
+      usingProxy: useProxy,
+      baseUrl,
+      endpoint,
+      isClient: useProxy,
+      API_BASE_URL,
+      PROXY_BASE_URL
     })
   }
   
   try {
+    // Verificar que la URL sea válida antes de hacer fetch
+    if (!url || url === 'undefined' || url.includes('undefined')) {
+      throw new Error(`Invalid URL: ${url}`)
+    }
+
     // En el cliente, no necesitamos mode: 'cors' porque es same-origin
     // En el servidor, mantenemos la configuración original
     const fetchOptions: RequestInit = {
@@ -60,13 +78,17 @@ async function fetchApi<T>(endpoint: string, options?: RequestInit): Promise<T> 
     }
 
     // Solo agregar mode y credentials si NO estamos usando el proxy (servidor-side)
-    if (!USE_API_PROXY) {
+    if (!useProxy) {
       fetchOptions.mode = 'cors'
       fetchOptions.credentials = 'omit'
     } else {
       // En el cliente usando proxy, no necesitamos mode ni credentials
       // y podemos usar keepalive para mejor manejo de conexiones
       fetchOptions.keepalive = true
+    }
+
+    if (isDev || useProxy) {
+      console.log(`[API] About to fetch: ${url}`, { fetchOptions, useProxy })
     }
 
     const response = await fetch(url, fetchOptions)
@@ -97,9 +119,22 @@ async function fetchApi<T>(endpoint: string, options?: RequestInit): Promise<T> 
   } catch (error) {
     const duration = Date.now() - startTime
     
+    // Log detallado del error siempre
+    const useProxy = isClient()
+    console.error(`[API] Error caught: ${url} (${duration}ms)`, {
+      error,
+      errorName: error instanceof Error ? error.name : 'Unknown',
+      errorMessage: error instanceof Error ? error.message : String(error),
+      errorStack: error instanceof Error ? error.stack : undefined,
+      usingProxy: useProxy,
+      url,
+      baseUrl,
+      endpoint,
+    })
+    
     // Ignore AbortError (request was cancelled intentionally)
     if (error instanceof Error && error.name === 'AbortError') {
-      if (isDev) {
+      if (isDev || typeof window !== 'undefined') {
         console.log(`[API] Request aborted: ${url} (${duration}ms)`)
       }
       throw error // Re-throw to let caller handle cancellation
@@ -107,29 +142,51 @@ async function fetchApi<T>(endpoint: string, options?: RequestInit): Promise<T> 
     
     // Improve error messages for network failures
     if (error instanceof TypeError && error.message === 'Failed to fetch') {
-      if (isDev) {
-        console.error(`[API] Network error: ${url} (${duration}ms)`, error)
+      if (isDev || typeof window !== 'undefined') {
+        console.error(`[API] Network error (Failed to fetch): ${url} (${duration}ms)`, error)
       }
       // Si estamos usando el proxy y falla, puede ser un problema de conexión
-      const errorMessage = USE_API_PROXY 
+      const useProxy = isClient()
+      const errorMessage = useProxy 
         ? `No se pudo conectar al backend. Verifica que el servidor esté corriendo y accesible.`
         : `No se pudo conectar al backend en ${url}. Verifica que el servidor esté corriendo y accesible.`
       throw new Error(errorMessage)
     }
     
+    // Manejar otros errores de red
+    if (error instanceof Error && (
+      error.message.includes('NetworkError') ||
+      error.message.includes('network') ||
+      error.message.includes('fetch')
+    )) {
+      if (isDev || typeof window !== 'undefined') {
+        console.error(`[API] Network-related error: ${url} (${duration}ms)`, error)
+      }
+      const useProxy = isClient()
+      const errorMessage = useProxy 
+        ? `Error de red al conectar con el backend. Verifica tu conexión.`
+        : `Error de red al conectar con ${url}. Verifica tu conexión.`
+      throw new Error(errorMessage)
+    }
+    
     // Manejar errores de respuesta del proxy (status 499 = cancelado)
     if (error instanceof Error && error.message.includes('499')) {
-      if (isDev) {
+      if (isDev || typeof window !== 'undefined') {
         console.log(`[API] Request cancelled by proxy: ${url} (${duration}ms)`)
       }
       throw error // Re-throw como AbortError para que el caller lo maneje
     }
     
-    if (isDev) {
-      console.error(`[API] Error: ${url} (${duration}ms)`, error)
+    if (isDev || typeof window !== 'undefined') {
+      console.error(`[API] Unknown error: ${url} (${duration}ms)`, error)
     }
     
-    throw error
+    // Re-throw con mensaje más descriptivo
+    if (error instanceof Error) {
+      throw error
+    }
+    
+    throw new Error(`Error desconocido al conectar con ${url}: ${String(error)}`)
   }
 }
 
