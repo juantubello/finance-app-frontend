@@ -55,53 +55,112 @@ export default function AnnualPage() {
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
+    const abortController = new AbortController()
+    let isCancelled = false
+
     const loadData = async () => {
       setLoading(true)
       setError(null)
       try {
         // Load annual summary
-        const annualData = await fetchAnnualSummary(selectedYear)
-        setData(annualData)
+        const annualData = await fetchAnnualSummary(selectedYear, abortController.signal)
+        
+        if (!isCancelled) {
+          setData(annualData)
+        }
 
         // Load "Boludeces" expenses for each month
         const unusualMap = new Map<number, number>()
         const promises = Array.from({ length: 12 }, (_, i) => i + 1).map(async (month) => {
           try {
-            const expenses = await fetchMonthlyExpenses(selectedYear, month, 'Boludeces')
+            const expenses = await fetchMonthlyExpenses(selectedYear, month, 'Boludeces', abortController.signal)
             const total = expenses.items.reduce((sum, t) => sum + t.amount, 0)
-            unusualMap.set(month, total)
+            if (!isCancelled) {
+              unusualMap.set(month, total)
+            }
           } catch (err) {
+            // Ignore abort errors
+            if (err instanceof Error && err.name === 'AbortError') {
+              return
+            }
             console.error(`Error loading unusual expenses for month ${month}:`, err)
-            unusualMap.set(month, 0)
+            if (!isCancelled) {
+              unusualMap.set(month, 0)
+            }
           }
         })
         await Promise.all(promises)
-        setUnusualData(unusualMap)
+        
+        if (!isCancelled) {
+          setUnusualData(unusualMap)
+        }
       } catch (err) {
-        console.error('Error loading annual data:', err)
-        setError(err instanceof Error ? err.message : 'Error al cargar los datos anuales')
+        // Ignore abort errors
+        if (err instanceof Error && err.name === 'AbortError') {
+          return
+        }
+        
+        if (!isCancelled) {
+          console.error('Error loading annual data:', err)
+          setError(err instanceof Error ? err.message : 'Error al cargar los datos anuales')
+        }
       } finally {
-        setLoading(false)
+        if (!isCancelled) {
+          setLoading(false)
+        }
       }
     }
 
-    loadData()
+    // Debounce: wait 100ms before loading to avoid rapid-fire requests
+    const timeoutId = setTimeout(() => {
+      loadData()
+    }, 100)
+
+    return () => {
+      isCancelled = true
+      abortController.abort()
+      clearTimeout(timeoutId)
+    }
   }, [selectedYear])
 
   useEffect(() => {
+    const abortController = new AbortController()
+    let isCancelled = false
+
     const loadCardData = async () => {
       setLoadingCards(true)
       try {
-        const cardData = await fetchCardAnnual(selectedYear)
-        setCardAnnualData(cardData)
+        const cardData = await fetchCardAnnual(selectedYear, abortController.signal)
+        
+        if (!isCancelled) {
+          setCardAnnualData(cardData)
+        }
       } catch (err) {
-        console.error('Error loading card annual data:', err)
+        // Ignore abort errors
+        if (err instanceof Error && err.name === 'AbortError') {
+          return
+        }
+        
+        if (!isCancelled) {
+          console.error('Error loading card annual data:', err)
+        }
       } finally {
-        setLoadingCards(false)
+        if (!isCancelled) {
+          setLoadingCards(false)
+        }
       }
     }
 
-    loadCardData()
+    // Debounce: wait 100ms before loading to avoid rapid-fire requests
+    const timeoutId = setTimeout(() => {
+      loadCardData()
+    }, 100)
+
+    return () => {
+      isCancelled = true
+      abortController.abort()
+      clearTimeout(timeoutId)
+    }
   }, [selectedYear])
 
   if (loading) {
