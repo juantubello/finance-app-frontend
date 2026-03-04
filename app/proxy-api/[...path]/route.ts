@@ -11,35 +11,35 @@ const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || process.env.API_BAS
  */
 export async function GET(
   request: NextRequest,
-  { params }: { params: { path: string[] } }
+  context: { params: Promise<{ path: string[] }> | { path: string[] } }
 ) {
-  return handleProxyRequest(request, params, 'GET')
+  return handleProxyRequest(request, context.params, 'GET')
 }
 
 export async function POST(
   request: NextRequest,
-  { params }: { params: { path: string[] } }
+  context: { params: Promise<{ path: string[] }> | { path: string[] } }
 ) {
-  return handleProxyRequest(request, params, 'POST')
+  return handleProxyRequest(request, context.params, 'POST')
 }
 
 export async function PUT(
   request: NextRequest,
-  { params }: { params: { path: string[] } }
+  context: { params: Promise<{ path: string[] }> | { path: string[] } }
 ) {
-  return handleProxyRequest(request, params, 'PUT')
+  return handleProxyRequest(request, context.params, 'PUT')
 }
 
 export async function DELETE(
   request: NextRequest,
-  { params }: { params: { path: string[] } }
+  context: { params: Promise<{ path: string[] }> | { path: string[] } }
 ) {
-  return handleProxyRequest(request, params, 'DELETE')
+  return handleProxyRequest(request, context.params, 'DELETE')
 }
 
 async function handleProxyRequest(
   request: NextRequest,
-  params: { path: string[] },
+  params: Promise<{ path: string[] }> | { path: string[] },
   method: string
 ) {
   const abortController = new AbortController()
@@ -50,10 +50,70 @@ async function handleProxyRequest(
   })
 
   try {
+    // Resolver params si es una Promise (Next.js 15+)
+    let resolvedParams: { path: string[] }
+    try {
+      // En Next.js 15+, params puede ser una Promise
+      if (params && typeof (params as any).then === 'function') {
+        resolvedParams = await (params as Promise<{ path: string[] }>)
+      } else {
+        resolvedParams = params as { path: string[] }
+      }
+    } catch (paramError) {
+      console.error('[API Proxy] Error resolving params:', paramError)
+      return NextResponse.json(
+        { error: 'Invalid request parameters' },
+        { status: 400 }
+      )
+    }
+    
+    // Validar que path existe y es un array
+    if (!resolvedParams || !resolvedParams.path || !Array.isArray(resolvedParams.path)) {
+      // Intentar obtener el path desde la URL directamente como fallback
+      const urlPath = request.nextUrl.pathname.replace('/proxy-api/', '')
+      
+      console.error('[API Proxy] Invalid params structure:', {
+        resolvedParams,
+        paramsType: typeof params,
+        isPromise: params && typeof (params as any).then === 'function',
+        pathExists: !!resolvedParams?.path,
+        pathIsArray: Array.isArray(resolvedParams?.path),
+        rawParams: params,
+        urlPathname: request.nextUrl.pathname,
+        extractedPath: urlPath,
+      })
+      
+      // Si podemos extraer el path de la URL, usarlo como fallback
+      if (urlPath && urlPath !== '/proxy-api' && urlPath !== '/proxy-api/') {
+        const pathParts = urlPath.split('/').filter(Boolean)
+        if (pathParts.length > 0) {
+          resolvedParams = { path: pathParts }
+        } else {
+          return NextResponse.json(
+            { error: 'Invalid request path', details: 'Path parameter is missing or invalid' },
+            { status: 400 }
+          )
+        }
+      } else {
+        return NextResponse.json(
+          { error: 'Invalid request path', details: 'Path parameter is missing or invalid' },
+          { status: 400 }
+        )
+      }
+    }
+    
     // Construir la URL del backend
-    const path = params.path.join('/')
+    const path = resolvedParams.path.join('/')
     const searchParams = request.nextUrl.searchParams.toString()
     const backendUrl = `${API_BASE_URL}/${path}${searchParams ? `?${searchParams}` : ''}`
+    
+    // Log para debugging
+    console.log('[API Proxy] Proxying request:', {
+      method,
+      path: resolvedParams.path,
+      backendUrl,
+      hasSearchParams: !!searchParams,
+    })
 
     // Obtener el body si existe (para POST, PUT, etc.)
     let body: string | undefined
@@ -127,10 +187,22 @@ async function handleProxyRequest(
           { status: 504 }
         )
       }
+      
+      // Log detallado del error para debugging
+      console.error('[API Proxy] Error details:', {
+        name: error.name,
+        message: error.message,
+        stack: error.stack,
+        backendUrl,
+      })
     }
 
     return NextResponse.json(
-      { error: 'Internal server error', message: error instanceof Error ? error.message : 'Unknown error' },
+      { 
+        error: 'Internal server error', 
+        message: error instanceof Error ? error.message : 'Unknown error',
+        details: process.env.NODE_ENV === 'development' ? String(error) : undefined
+      },
       { status: 500 }
     )
   }
