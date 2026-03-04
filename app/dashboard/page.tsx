@@ -22,46 +22,21 @@ export default function DashboardPage() {
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
-    const abortController = new AbortController()
-    let isCancelled = false
-
     const loadData = async () => {
       setLoading(true)
       setError(null)
       try {
-        const summaryData = await fetchMonthlySummary(year, month, abortController.signal)
-        
-        // Only update state if request wasn't cancelled
-        if (!isCancelled) {
-          setSummary(summaryData)
-        }
+        const summaryData = await fetchMonthlySummary(year, month)
+        setSummary(summaryData)
       } catch (err) {
-        // Ignore abort errors
-        if (err instanceof Error && err.name === 'AbortError') {
-          return
-        }
-        
-        if (!isCancelled) {
-          console.error('Error loading dashboard data:', err)
-          setError(err instanceof Error ? err.message : 'Error al cargar los datos del dashboard')
-        }
+        console.error('Error loading dashboard data:', err)
+        setError(err instanceof Error ? err.message : 'Error al cargar los datos del dashboard')
       } finally {
-        if (!isCancelled) {
-          setLoading(false)
-        }
+        setLoading(false)
       }
     }
 
-    // Debounce: wait 100ms before loading to avoid rapid-fire requests
-    const timeoutId = setTimeout(() => {
-      loadData()
-    }, 100)
-
-    return () => {
-      isCancelled = true
-      abortController.abort()
-      clearTimeout(timeoutId)
-    }
+    loadData()
   }, [year, month])
 
   useEffect(() => {

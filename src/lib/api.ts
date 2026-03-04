@@ -17,176 +17,38 @@ import { getMonthName } from '@/src/lib/format'
 // ⚠️ En producción, siempre debe estar definida en .env
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:3000'
 
-// Usar API proxy de Next.js para evitar problemas de CORS
-// En el cliente, las peticiones van a /proxy-api/* que luego hace proxy al backend real
-// Usamos /proxy-api en lugar de /api/proxy para evitar que Cloudflare Access lo intercepte
-const PROXY_BASE_URL = '/proxy-api'
-
-// Función helper para detectar si estamos en el cliente
-function isClient(): boolean {
-  return typeof window !== 'undefined'
-}
-
 // Toggle for demo mode - set to false when backend is ready
 export const USE_DEMO_DATA = true
 
-// Generic fetch wrapper with error handling and CORS support
+// Generic fetch wrapper with error handling
 // TODO: Add authentication headers when auth is implemented
 // Example: headers: { 'Authorization': `Bearer ${token}` }
 async function fetchApi<T>(endpoint: string, options?: RequestInit): Promise<T> {
-  // Usar proxy en el cliente para evitar CORS, directo al backend en el servidor
-  // Evaluar en tiempo de ejecución, no en tiempo de módulo
-  const useProxy = isClient()
-  const baseUrl = useProxy ? PROXY_BASE_URL : API_BASE_URL
-  const url = `${baseUrl}${endpoint}`
-  
-  // Enable detailed logging in development
-  const isDev = process.env.NODE_ENV === 'development'
-  const startTime = Date.now()
-  
-  // Log siempre en desarrollo, incluso antes del try
-  if (isDev || useProxy) {
-    console.log(`[API] Starting fetch: ${url}`, { 
-      method: options?.method || 'GET',
-      hasSignal: !!options?.signal,
-      usingProxy: useProxy,
-      baseUrl,
-      endpoint,
-      isClient: useProxy,
-      API_BASE_URL,
-      PROXY_BASE_URL
-    })
-  }
+  const url = `${API_BASE_URL}${endpoint}`
   
   try {
-    // Verificar que la URL sea válida antes de hacer fetch
-    if (!url || url === 'undefined' || url.includes('undefined')) {
-      throw new Error(`Invalid URL: ${url}`)
-    }
-
-    // En el cliente, no necesitamos mode: 'cors' porque es same-origin
-    // En el servidor, mantenemos la configuración original
-    const fetchOptions: RequestInit = {
+    const response = await fetch(url, {
       ...options,
       headers: {
         'Content-Type': 'application/json',
-        'Accept': 'application/json',
         // TODO: Add auth headers here
         // 'Authorization': `Bearer ${getAuthToken()}`,
         ...options?.headers,
       },
-    }
-
-    // Solo agregar mode y credentials si NO estamos usando el proxy (servidor-side)
-    if (!useProxy) {
-      fetchOptions.mode = 'cors'
-      fetchOptions.credentials = 'omit'
-    } else {
-      // En el cliente usando proxy, no necesitamos mode ni credentials
-      // y podemos usar keepalive para mejor manejo de conexiones
-      fetchOptions.keepalive = true
-    }
-
-    if (isDev || useProxy) {
-      console.log(`[API] About to fetch: ${url}`, { fetchOptions, useProxy })
-    }
-
-    const response = await fetch(url, fetchOptions)
-
-    const duration = Date.now() - startTime
-    
-    if (isDev) {
-      console.log(`[API] Response: ${url} (${duration}ms)`, {
-        status: response.status,
-        statusText: response.statusText,
-        ok: response.ok,
-      })
-    }
+    })
 
     if (!response.ok) {
-      // Si el proxy devuelve 499, significa que fue cancelado
-      if (response.status === 499) {
-        const abortError = new Error('Request aborted')
-        abortError.name = 'AbortError'
-        throw abortError
-      }
-      
       const errorText = await response.text().catch(() => response.statusText)
       throw new Error(`API Error: ${response.status} ${errorText || response.statusText}`)
     }
 
     return response.json()
   } catch (error) {
-    const duration = Date.now() - startTime
-    
-    // Log detallado del error siempre
-    const useProxy = isClient()
-    console.error(`[API] Error caught: ${url} (${duration}ms)`, {
-      error,
-      errorName: error instanceof Error ? error.name : 'Unknown',
-      errorMessage: error instanceof Error ? error.message : String(error),
-      errorStack: error instanceof Error ? error.stack : undefined,
-      usingProxy: useProxy,
-      url,
-      baseUrl,
-      endpoint,
-    })
-    
-    // Ignore AbortError (request was cancelled intentionally)
-    if (error instanceof Error && error.name === 'AbortError') {
-      if (isDev || typeof window !== 'undefined') {
-        console.log(`[API] Request aborted: ${url} (${duration}ms)`)
-      }
-      throw error // Re-throw to let caller handle cancellation
-    }
-    
     // Improve error messages for network failures
     if (error instanceof TypeError && error.message === 'Failed to fetch') {
-      if (isDev || typeof window !== 'undefined') {
-        console.error(`[API] Network error (Failed to fetch): ${url} (${duration}ms)`, error)
-      }
-      // Si estamos usando el proxy y falla, puede ser un problema de conexión
-      const useProxy = isClient()
-      const errorMessage = useProxy 
-        ? `No se pudo conectar al backend. Verifica que el servidor esté corriendo y accesible.`
-        : `No se pudo conectar al backend en ${url}. Verifica que el servidor esté corriendo y accesible.`
-      throw new Error(errorMessage)
+      throw new Error(`No se pudo conectar al backend en ${url}. Verifica que el servidor esté corriendo y accesible.`)
     }
-    
-    // Manejar otros errores de red
-    if (error instanceof Error && (
-      error.message.includes('NetworkError') ||
-      error.message.includes('network') ||
-      error.message.includes('fetch')
-    )) {
-      if (isDev || typeof window !== 'undefined') {
-        console.error(`[API] Network-related error: ${url} (${duration}ms)`, error)
-      }
-      const useProxy = isClient()
-      const errorMessage = useProxy 
-        ? `Error de red al conectar con el backend. Verifica tu conexión.`
-        : `Error de red al conectar con ${url}. Verifica tu conexión.`
-      throw new Error(errorMessage)
-    }
-    
-    // Manejar errores de respuesta del proxy (status 499 = cancelado)
-    if (error instanceof Error && error.message.includes('499')) {
-      if (isDev || typeof window !== 'undefined') {
-        console.log(`[API] Request cancelled by proxy: ${url} (${duration}ms)`)
-      }
-      throw error // Re-throw como AbortError para que el caller lo maneje
-    }
-    
-    if (isDev || typeof window !== 'undefined') {
-      console.error(`[API] Unknown error: ${url} (${duration}ms)`, error)
-    }
-    
-    // Re-throw con mensaje más descriptivo
-    if (error instanceof Error) {
-      throw error
-    }
-    
-    throw new Error(`Error desconocido al conectar con ${url}: ${String(error)}`)
+    throw error
   }
 }
 
@@ -207,11 +69,11 @@ function buildParams(params: Record<string, string | number>): string {
  * GET /monthly/summary
  * Returns dashboard summary for a specific month (combines expenses, income, savings)
  */
-export async function fetchMonthlySummary(year: number, month: number, signal?: AbortSignal): Promise<MonthlySummary> {
+export async function fetchMonthlySummary(year: number, month: number): Promise<MonthlySummary> {
   const [expensesData, incomeData, savingsData] = await Promise.all([
-    fetchMonthlyExpenses(year, month, undefined, signal),
-    fetchMonthlyIncome(year, month, signal),
-    fetchMonthlySavings(year, month, signal),
+    fetchMonthlyExpenses(year, month),
+    fetchMonthlyIncome(year, month),
+    fetchMonthlySavings(year, month),
   ])
 
   const totalExpenses = expensesData.totals.total
@@ -263,11 +125,10 @@ interface ApiExpensesResponse {
 export async function fetchMonthlyExpenses(
   year: number, 
   month: number,
-  category?: string,
-  signal?: AbortSignal
+  category?: string
 ): Promise<MonthlyListResponse<Transaction>> {
   const params = buildParams({ year, month })
-  const response = await fetchApi<ApiExpensesResponse>(`/expenses?${params}`, { signal })
+  const response = await fetchApi<ApiExpensesResponse>(`/expenses?${params}`)
   
   // Map API response to frontend format
   let transactions: Transaction[] = response.expenses.map((expense) => ({
@@ -340,9 +201,9 @@ interface ApiIncomeResponse {
  * GET /income
  * Returns list of income for a specific month
  */
-export async function fetchMonthlyIncome(year: number, month: number, signal?: AbortSignal): Promise<MonthlyListResponse<Transaction>> {
+export async function fetchMonthlyIncome(year: number, month: number): Promise<MonthlyListResponse<Transaction>> {
   const params = buildParams({ year, month })
-  const response = await fetchApi<ApiIncomeResponse>(`/income?${params}`, { signal })
+  const response = await fetchApi<ApiIncomeResponse>(`/income?${params}`)
   
   // Map API response to frontend format
   const transactions: Transaction[] = response.income.map((income) => ({
@@ -421,9 +282,9 @@ export interface MonthlySavingsResponse extends MonthlyListResponse<Transaction>
  * GET /savings
  * Returns list of savings for a specific month
  */
-export async function fetchMonthlySavings(year: number, month: number, signal?: AbortSignal): Promise<MonthlySavingsResponse> {
+export async function fetchMonthlySavings(year: number, month: number): Promise<MonthlySavingsResponse> {
   const params = buildParams({ year, month })
-  const response = await fetchApi<ApiSavingsResponse>(`/savings?${params}`, { signal })
+  const response = await fetchApi<ApiSavingsResponse>(`/savings?${params}`)
   
   // Map API response to frontend format
   const transactions: Transaction[] = response.savings.map((saving) => ({
@@ -521,27 +382,27 @@ interface ApiAnnualSavingsResponse {
  * GET /annual/expenses
  * Returns annual expenses summary for a specific year
  */
-export async function fetchAnnualExpenses(year: number, signal?: AbortSignal): Promise<ApiAnnualExpensesResponse> {
+export async function fetchAnnualExpenses(year: number): Promise<ApiAnnualExpensesResponse> {
   const params = buildParams({ year })
-  return fetchApi<ApiAnnualExpensesResponse>(`/annual/expenses?${params}`, { signal })
+  return fetchApi<ApiAnnualExpensesResponse>(`/annual/expenses?${params}`)
 }
 
 /**
  * GET /annual/income
  * Returns annual income summary for a specific year
  */
-export async function fetchAnnualIncome(year: number, signal?: AbortSignal): Promise<ApiAnnualIncomeResponse> {
+export async function fetchAnnualIncome(year: number): Promise<ApiAnnualIncomeResponse> {
   const params = buildParams({ year })
-  return fetchApi<ApiAnnualIncomeResponse>(`/annual/income?${params}`, { signal })
+  return fetchApi<ApiAnnualIncomeResponse>(`/annual/income?${params}`)
 }
 
 /**
  * GET /annual/savings
  * Returns annual savings summary for a specific year
  */
-export async function fetchAnnualSavings(year: number, signal?: AbortSignal): Promise<ApiAnnualSavingsResponse> {
+export async function fetchAnnualSavings(year: number): Promise<ApiAnnualSavingsResponse> {
   const params = buildParams({ year })
-  return fetchApi<ApiAnnualSavingsResponse>(`/annual/savings?${params}`, { signal })
+  return fetchApi<ApiAnnualSavingsResponse>(`/annual/savings?${params}`)
 }
 
 /**
@@ -570,16 +431,16 @@ function sumByMonth(data: ApiAnnualCategoryData[]): Map<number, number> {
  * GET /annual/summary
  * Returns annual summary for a specific year (combines expenses, income, savings)
  */
-export async function fetchAnnualSummary(year: number, signal?: AbortSignal): Promise<AnnualSummary> {
+export async function fetchAnnualSummary(year: number): Promise<AnnualSummary> {
   let expensesData: ApiAnnualExpensesResponse
   let incomeData: ApiAnnualIncomeResponse
   let savingsData: ApiAnnualSavingsResponse
 
   try {
     [expensesData, incomeData, savingsData] = await Promise.all([
-      fetchAnnualExpenses(year, signal),
-      fetchAnnualIncome(year, signal),
-      fetchAnnualSavings(year, signal),
+      fetchAnnualExpenses(year),
+      fetchAnnualIncome(year),
+      fetchAnnualSavings(year),
     ])
   } catch (error) {
     console.error('Error fetching annual data:', error)
@@ -983,9 +844,9 @@ export interface CardAnnualResponse {
  * GET /cards/statements
  * Returns card statements for a specific month
  */
-export async function fetchCardStatements(year: number, month: number, signal?: AbortSignal): Promise<CardStatementsResponse> {
+export async function fetchCardStatements(year: number, month: number): Promise<CardStatementsResponse> {
   const params = buildParams({ year, month })
-  return fetchApi<CardStatementsResponse>(`/cards/statements?${params}`, { signal })
+  return fetchApi<CardStatementsResponse>(`/cards/statements?${params}`)
 }
 
 // Card Payment FX types
@@ -1030,9 +891,9 @@ export interface CardPaymentFxPostResponse {
  * GET /cards/payment-fx
  * Gets the conversion amount saved for a specific month/year
  */
-export async function fetchCardPaymentFx(year: number, month: number, signal?: AbortSignal): Promise<CardPaymentFxResponse> {
+export async function fetchCardPaymentFx(year: number, month: number): Promise<CardPaymentFxResponse> {
   const params = buildParams({ year, month })
-  return fetchApi<CardPaymentFxResponse>(`/cards/payment-fx?${params}`, { signal })
+  return fetchApi<CardPaymentFxResponse>(`/cards/payment-fx?${params}`)
 }
 
 /**
@@ -1050,16 +911,16 @@ export async function saveCardPaymentFx(data: CardPaymentFxRequest): Promise<Car
  * GET /cards/statements/categories
  * Returns card statements categories for a specific month
  */
-export async function fetchCardCategories(year: number, month: number, signal?: AbortSignal): Promise<CardCategoriesResponse> {
+export async function fetchCardCategories(year: number, month: number): Promise<CardCategoriesResponse> {
   const params = buildParams({ year, month })
-  return fetchApi<CardCategoriesResponse>(`/cards/statements/categories?${params}`, { signal })
+  return fetchApi<CardCategoriesResponse>(`/cards/statements/categories?${params}`)
 }
 
 /**
  * GET /cards/statements/annual
  * Returns annual card statements summary
  */
-export async function fetchCardAnnual(year: number, signal?: AbortSignal): Promise<CardAnnualResponse> {
+export async function fetchCardAnnual(year: number): Promise<CardAnnualResponse> {
   const params = buildParams({ year })
-  return fetchApi<CardAnnualResponse>(`/cards/statements/annual?${params}`, { signal })
+  return fetchApi<CardAnnualResponse>(`/cards/statements/annual?${params}`)
 }

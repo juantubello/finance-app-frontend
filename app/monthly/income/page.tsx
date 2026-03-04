@@ -21,50 +21,25 @@ export default function IncomePage() {
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
-    const abortController = new AbortController()
-    let isCancelled = false
-
     const loadData = async () => {
       setLoading(true)
       setError(null)
       try {
         const [incomeData, annualIncomeData] = await Promise.all([
-          fetchMonthlyIncome(year, month, abortController.signal),
-          fetchAnnualIncome(year, abortController.signal).catch(() => null) // Si falla, no es crítico
+          fetchMonthlyIncome(year, month),
+          fetchAnnualIncome(year).catch(() => null) // Si falla, no es crítico
         ])
-        
-        // Only update state if request wasn't cancelled
-        if (!isCancelled) {
-          setData(incomeData)
-          setAnnualData(annualIncomeData)
-        }
+        setData(incomeData)
+        setAnnualData(annualIncomeData)
       } catch (err) {
-        // Ignore abort errors
-        if (err instanceof Error && err.name === 'AbortError') {
-          return
-        }
-        
-        if (!isCancelled) {
-          console.error('Error loading income:', err)
-          setError(err instanceof Error ? err.message : 'Error al cargar los ingresos')
-        }
+        console.error('Error loading income:', err)
+        setError(err instanceof Error ? err.message : 'Error al cargar los ingresos')
       } finally {
-        if (!isCancelled) {
-          setLoading(false)
-        }
+        setLoading(false)
       }
     }
 
-    // Debounce: wait 100ms before loading to avoid rapid-fire requests
-    const timeoutId = setTimeout(() => {
-      loadData()
-    }, 100)
-
-    return () => {
-      isCancelled = true
-      abortController.abort()
-      clearTimeout(timeoutId)
-    }
+    loadData()
   }, [year, month])
 
   // Prepare chart data for income evolution

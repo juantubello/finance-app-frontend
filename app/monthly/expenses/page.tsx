@@ -115,99 +115,49 @@ export default function ExpensesPage() {
   }, [data])
 
   useEffect(() => {
-    const abortController = new AbortController()
-    let isCancelled = false
-
     const loadData = async () => {
       setLoading(true)
       setError(null)
       try {
         const [expensesData, incomeDataResult] = await Promise.all([
-          fetchMonthlyExpenses(year, month, undefined, abortController.signal),
-          fetchMonthlyIncome(year, month, abortController.signal),
+          fetchMonthlyExpenses(year, month),
+          fetchMonthlyIncome(year, month),
         ])
-        
-        // Only update state if request wasn't cancelled
-        if (!isCancelled) {
-          setData(expensesData)
-          setIncomeData(incomeDataResult)
-        }
+        setData(expensesData)
+        setIncomeData(incomeDataResult)
       } catch (err) {
-        // Ignore abort errors
-        if (err instanceof Error && err.name === 'AbortError') {
-          return
-        }
-        
-        if (!isCancelled) {
-          console.error('Error loading expenses:', err)
-          setError(err instanceof Error ? err.message : 'Error al cargar los gastos')
-        }
+        console.error('Error loading expenses:', err)
+        setError(err instanceof Error ? err.message : 'Error al cargar los gastos')
       } finally {
-        if (!isCancelled) {
-          setLoading(false)
-        }
+        setLoading(false)
       }
     }
 
-    // Debounce: wait 100ms before loading to avoid rapid-fire requests
-    const timeoutId = setTimeout(() => {
-      loadData()
-    }, 100)
-
-    return () => {
-      isCancelled = true
-      abortController.abort()
-      clearTimeout(timeoutId)
-    }
+    loadData()
   }, [year, month])
 
   useEffect(() => {
-    const abortController = new AbortController()
-    let isCancelled = false
-
     const loadCardData = async () => {
       setLoadingCards(true)
       try {
         const [statements, categories, paymentFxData] = await Promise.all([
-          fetchCardStatements(year, month, abortController.signal),
-          fetchCardCategories(year, month, abortController.signal),
-          fetchCardPaymentFx(year, month, abortController.signal).catch(() => null), // Don't fail if this fails
+          fetchCardStatements(year, month),
+          fetchCardCategories(year, month),
+          fetchCardPaymentFx(year, month).catch(() => null), // Don't fail if this fails
         ])
-        
-        // Only update state if request wasn't cancelled
-        if (!isCancelled) {
-          setCardData(statements)
-          setCardCategories(categories)
-          if (paymentFxData) {
-            setPaymentFx(paymentFxData)
-          }
+        setCardData(statements)
+        setCardCategories(categories)
+        if (paymentFxData) {
+          setPaymentFx(paymentFxData)
         }
       } catch (err) {
-        // Ignore abort errors
-        if (err instanceof Error && err.name === 'AbortError') {
-          return
-        }
-        
-        if (!isCancelled) {
-          console.error('Error loading card data:', err)
-        }
+        console.error('Error loading card data:', err)
       } finally {
-        if (!isCancelled) {
-          setLoadingCards(false)
-        }
+        setLoadingCards(false)
       }
     }
 
-    // Debounce: wait 100ms before loading to avoid rapid-fire requests
-    const timeoutId = setTimeout(() => {
-      loadCardData()
-    }, 100)
-
-    return () => {
-      isCancelled = true
-      abortController.abort()
-      clearTimeout(timeoutId)
-    }
+    loadCardData()
   }, [year, month])
 
   const handlePaymentSuccess = async () => {
